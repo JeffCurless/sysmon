@@ -63,7 +63,7 @@ The package installs:
 - a **System Tools** menu entry with the sysmon icon
 - an example configuration in `/usr/share/doc/sysmon/examples/sysmon.ini`
 
-Remove it with `sudo apt remove sysmon`. The package doesn't create `/etc/sysmon.ini`; copy the example there if you want one (step 3 below). The `sudo smartctl` note in step 4 still applies.
+Remove it with `sudo apt remove sysmon`. If `/etc/sysmon.ini` doesn't exist, the package generates one from your hardware (see [Generated defaults](#generated-defaults)); an existing file is never changed, and `sudo apt purge sysmon` removes it. The `sudo smartctl` note in step 4 still applies.
 
 To release a new version, add an entry to `debian/changelog` (`dch -i` from the `devscripts` package does this) before building.
 
@@ -84,7 +84,7 @@ To release a new version, add an entry to `debian/changelog` (`dch -i` from the 
    cd systemmonitor
    ```
 
-3. Optionally, install a configuration file. sysmon runs fine without one, but it's the way to hide devices you don't care about (an SD card with no temperature sensor, the loopback interface, an unused Ethernet port):
+3. Optionally, install a configuration file. Without one, sysmon applies the [generated defaults](#generated-defaults) in memory; a file is the way to choose for yourself which devices to hide (an SD card with no temperature sensor, the loopback interface, an unused Ethernet port):
 
    ```bash
    sudo cp sysmon.ini /etc/sysmon.ini
@@ -191,6 +191,7 @@ The disk and network charts rescale automatically. When a new sample is more tha
 | `src/configfile.py` | INI file reader wrapping `configparser`; never raises, always returns the caller's default |
 | `src/fanspeed.py` | Optional GPIO tachometer reader for a case fan |
 | `src/appicon.py` | Builds the window icon from `icons/` |
+| `src/autoconfig.py` | Generates the default configuration from the hardware (NVMe root, Argon ONE UP); run by the package install and used in memory when there is no config file |
 | `icons/` | `sysmonicon.svg` (the master icon), `sysmon<N>x<N>.png` renders of it at 16–256 px, and `make_icons.py`, which regenerates the PNGs after the SVG changes |
 | `sysmon.ini` | Sample configuration file |
 | `tests/` | pytest suite (see [Testing](#testing)); `tests/fixtures/` holds its data files |
@@ -237,7 +238,23 @@ All chart classes live in `src/charts.py`. Charts keep Qt Charts' padding to a m
 
 ## Configuration
 
-The configuration file is `/etc/sysmon.ini`; a sample is provided as `sysmon.ini` in this repository. The file uses standard INI format. Missing files, sections, and keys are silently replaced with defaults, and a file that can't be parsed is treated as empty from the point of the error onward.
+The configuration file is `/etc/sysmon.ini`; a sample is provided as `sysmon.ini` in this repository. The file uses standard INI format. Missing sections and keys are silently replaced with defaults, and a file that can't be parsed is treated as empty from the point of the error onward.
+
+### Generated defaults
+
+When the package is installed and `/etc/sysmon.ini` doesn't exist, it is generated from the hardware by `src/autoconfig.py`. If sysmon starts and finds no file at all (for example when run from the repository), it applies the same rules in memory. The rules are:
+
+- **`lo`** is always hidden from the Network I/O chart.
+- If the **root filesystem is on an NVMe drive**, `mmcblk0` (the SD card or eMMC) is hidden from both the Temperature and Disk I/O charts.
+- On an **Argon ONE UP**, `eth0` is hidden: the CM5 module has an Ethernet controller, but the ONE UP doesn't wire it to a port. A ONE UP is recognised as a Compute Module 5 with the laptop's built-in keyboard (USB `6080:8060` or `6080:8061`) or built-in display (EDID manufacturer `BOE`, product `0x088b`). The CM5 on its own can't be told apart from other carrier boards.
+
+The generated file lists what was detected at the top. It is never regenerated while it exists; to regenerate it, delete it and run:
+
+```bash
+sudo /usr/lib/sysmon/venv/bin/python3 /usr/lib/sysmon/app/src/autoconfig.py --write /etc/sysmon.ini
+```
+
+To preview what would be generated, run `python3 src/autoconfig.py` (it prints the file).
 
 List values are comma-separated; spaces and double quotes around items are ignored, so `lo, eth0` and `"lo,eth0"` are equivalent.
 
@@ -325,6 +342,7 @@ The tests never touch real hardware. Kernel files come from a temporary fake `/p
 | `test_scaling.py` | unit tiers and Y-axis sizing for the disk and network charts |
 | `test_monitor_window.py` | the main window: case fan setup (including bad pins), drive filters, collapsing charts by their title, plot height at the minimum window size, saved view settings and their migration from oneUpMon, and the Help → Repository link |
 | `test_icons.py` | every icon size exists at its stated size, and the window icon loads them |
+| `test_autoconfig.py` | generated defaults: root disk detection (NVMe, SD, whole disk), Argon ONE UP detection by keyboard or display (and not on a Pi 5 or a plain CM5), the rendered file, and `--write` never overwriting |
 | `test_rolling_chart_properties.py` | [hypothesis](https://hypothesis.readthedocs.io/) property tests: random traffic must always display correctly and stay on-screen (skipped if hypothesis isn't installed) |
 
 Linting and type checking use the project's `.pylintrc` and `mypy.ini`; both currently report no issues:

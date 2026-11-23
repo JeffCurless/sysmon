@@ -120,6 +120,23 @@ def test_sample_config_hides_sd_card_and_unused_interfaces(make_window):
     assert series_names(window.network_chart) == ["wlan0 Read", "wlan0 Write"]
 
 
+def test_missing_config_uses_generated_defaults(make_window, fake_root, tmp_path):
+    '''With no config file, a ONE UP booted from NVMe hides lo, eth0 and mmcblk0.'''
+    fake_root.write("sys/class/net/eth0/statistics/rx_bytes", "0\n")
+    fake_root.write("sys/class/net/eth0/statistics/tx_bytes", "0\n")
+    fake_root.write("sys/bus/usb/devices/1-1.7/idVendor", "6080\n")    # ONE UP keyboard
+    fake_root.write("sys/bus/usb/devices/1-1.7/idProduct", "8060\n")
+    fake_root.write("proc/self/mountinfo", "25 1 259:2 / / rw - ext4 /dev/nvme0n1p2 rw\n")
+    fake_root.write("sys/devices/fake/nvme0n1/nvme0n1p2/partition", "2\n")
+    (fake_root.root / "sys/dev/block").mkdir(parents=True)
+    (fake_root.root / "sys/dev/block/259:2").symlink_to(fake_root.root / "sys/devices/fake/nvme0n1/nvme0n1p2")
+
+    window = make_window(config_path=tmp_path / "does-not-exist.ini")
+    assert series_names(window.cpu_chart) == ["CPU", "nvme0n1"]
+    assert series_names(window.io_chart) == ["nvme0n1 Read", "nvme0n1 Write"]
+    assert series_names(window.network_chart) == ["wlan0 Read", "wlan0 Write"]
+
+
 # --------------------------------------------------------------------------
 # Collapsing charts by clicking their title
 # --------------------------------------------------------------------------

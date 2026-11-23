@@ -19,10 +19,20 @@ without a password.
 .SH FILES
 .TP
 .I /etc/sysmon.ini
-Optional configuration file for hiding drives and network interfaces,
+Configuration file for hiding drives and network interfaces,
 setting a case fan tachometer GPIO pin, and passing extra
 .B smartctl
-options. An annotated example is installed at
+options. If it does not exist when the package is installed, it is
+generated from the hardware: the loopback interface
+.B lo
+is hidden; if the root filesystem is on an NVMe drive,
+.B mmcblk0
+is hidden; and on an Argon ONE UP,
+.B eth0
+(which is not wired to a port) is hidden. An existing file is never
+changed, and it is removed when the package is purged. If the file is
+missing when sysmon starts, the same rules are applied in memory. An
+annotated example is installed at
 .IR /usr/share/doc/sysmon/examples/sysmon.ini .
 .TP
 .I /usr/lib/sysmon/venv
