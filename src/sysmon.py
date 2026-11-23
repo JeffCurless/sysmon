@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
 
 from systemsupport import CPUInfo, CPULoad, multiDriveStat, NetworkLoad
 from configfile import ConfigClass
+import autoconfig
 from fanspeed import GetCaseFanSpeed
 from charts import DATA_WINDOW, RollingChart, RollingChartDynamic, CollapsibleChart
 from appicon import app_icon
@@ -81,6 +82,9 @@ class MonitorWindow(QMainWindow):
 
         # Get all the filters loaded
         self.config = ConfigClass(config_path)
+        if not self.config.loaded:
+            # No config file: use the same defaults the package would have written.
+            self.config.loadString(autoconfig.render(autoconfig.detect()))
         self.driveTempFilter = self.config.getValueAsList( 'drive', 'temp_ignore' )
         self.drivePerfFilter = self.config.getValueAsList( 'drive', 'perf_ignore' )
 

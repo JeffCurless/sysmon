@@ -25,6 +25,8 @@ class ConfigClass:
         '''
         self.filename = filename
         self.config   = configparser.ConfigParser()
+        # True once the file has actually been read (False if it is missing).
+        self.loaded   = False
         self._openConfig()
 
     def _openConfig(self) -> None:
@@ -36,8 +38,25 @@ class ConfigClass:
 
         '''
         try:
-            self.config.read( self.filename )
+            self.loaded = bool(self.config.read( self.filename ))
         except (configparser.Error, OSError, UnicodeDecodeError) as error:
+            # The file exists but is malformed; whatever parsed before the
+            # error is kept, and the file still counts as the configuration.
+            self.loaded = True
+            print( f"{error}" )
+
+    def loadString( self, text: str ) -> None:
+        '''
+        Read configuration from *text* (INI format) instead of a file, for
+        example generated defaults when the file is missing.  Like the rest of
+        the class, a parse error is reported and otherwise ignored.
+
+        Parameters:
+            text - INI-format configuration text.
+        '''
+        try:
+            self.config.read_string( text )
+        except configparser.Error as error:
             print( f"{error}" )
 
     def getValue( self, section : str, key : str, default="" ) -> str:

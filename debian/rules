@@ -10,7 +10,7 @@ ICON_SIZES = 16 22 24 32 48 64 128 256
 
 override_dh_auto_install:
 	install -D -m 0755 -t $(APPDIR)/src src/sysmon.py src/systemsupport.py
-	install -D -m 0644 -t $(APPDIR)/src src/configfile.py src/fanspeed.py src/appicon.py src/charts.py
+	install -D -m 0644 -t $(APPDIR)/src src/configfile.py src/fanspeed.py src/appicon.py src/charts.py src/autoconfig.py
 	install -D -m 0644 -t $(APPDIR)/icons icons/sysmonicon.svg \
 		$(foreach n,$(ICON_SIZES),icons/sysmon$(n)x$(n).png)
 	install -D -m 0755 debian/sysmon.launcher debian/sysmon/usr/bin/sysmon
