@@ -63,7 +63,7 @@ The package installs:
 - a **System Tools** menu entry with the sysmon icon
 - an example configuration in `/usr/share/doc/sysmon/examples/sysmon.ini`
 
-Remove it with `sudo apt remove sysmon`. If `/etc/sysmon.ini` doesn't exist, the package generates one from your hardware (see [Generated defaults](#generated-defaults)); an existing file is never changed, and `sudo apt purge sysmon` removes it. The `sudo smartctl` note in step 4 still applies.
+Remove it with `sudo apt remove sysmon`. The package installs no configuration file: sysmon works out [defaults](#built-in-defaults) from your hardware at every start, and your own changes, made with **File → Settings**, are saved per user in `~/.config/sysmon/sysmon.ini`. The `sudo smartctl` note in step 4 still applies.
 
 To release a new version, add an entry to `debian/changelog` (`dch -i` from the `devscripts` package does this) before building.
 
@@ -80,18 +80,11 @@ To release a new version, add an entry to `debian/changelog` (`dch -i` from the 
 2. Get the code:
 
    ```bash
-   git clone https://github.com/JeffCurless/systemmonitor.git
-   cd systemmonitor
+   git clone https://github.com/JeffCurless/sysmon.git
+   cd sysmon
    ```
 
-3. Optionally, install a configuration file. Without one, sysmon applies the [generated defaults](#generated-defaults) in memory; a file is the way to choose for yourself which devices to hide (an SD card with no temperature sensor, the loopback interface, an unused Ethernet port):
-
-   ```bash
-   sudo cp sysmon.ini /etc/sysmon.ini
-   sudo nano /etc/sysmon.ini
-   ```
-
-   See [Configuration](#configuration) for the available settings. To see the device names on your system, run `ls /sys/block /sys/class/net`.
+3. Nothing to configure up front: sysmon uses [built-in defaults](#built-in-defaults), and **File → Settings** changes them. See [Configuration](#configuration) if you'd rather edit the settings file by hand.
 
 4. If you want drive temperatures and aren't using a user with passwordless `sudo`, set that up as described below.
 
@@ -111,9 +104,11 @@ If a drive's temperature can't be read, its line on the Temperature chart shows 
 python3 src/sysmon.py    # or ./src/sysmon.py
 ```
 
-The application reads its configuration from `/etc/sysmon.ini` at startup (see [Configuration](#configuration)). Configuration changes take effect the next time sysmon starts.
+Settings are changed with **File → Settings** and take effect immediately (see [Configuration](#configuration)).
 
-### Example configurations
+### Example settings files
+
+These are what `~/.config/sysmon/sysmon.ini` might contain; **File → Settings** writes the same thing.
 
 A bare Raspberry Pi 5 booting from an SD card, connected over Wi-Fi:
 
@@ -175,9 +170,10 @@ The disk and network charts rescale automatically. When a new sample is more tha
 
 ### Menus
 
+- **File → Settings** (`Ctrl+,`) edits the settings: which drives appear on the Temperature and Disk I/O charts, which network interfaces appear, the case fan's GPIO pin, and each drive's `smartctl` device type. **Reset to defaults** fills in the [built-in defaults](#built-in-defaults). Saving applies the changes at once by rebuilding the window (chart history restarts; which charts are shown or collapsed is kept).
 - **File → Close** (`Ctrl+Q`) quits.
 - **View** shows or hides each chart.
-- **Help → Configuration Help** describes the `/etc/sysmon.ini` settings; **Help → Repository** opens the project's GitHub page, <https://github.com/JeffCurless/systemmonitor>; **Help → About**.
+- **Help → Repository** opens the project's GitHub page, <https://github.com/JeffCurless/sysmon>; **Help → About** shows the version, what sysmon does, and where your settings file is.
 
 ## Design
 
@@ -191,9 +187,12 @@ The disk and network charts rescale automatically. When a new sample is more tha
 | `src/configfile.py` | INI file reader wrapping `configparser`; never raises, always returns the caller's default |
 | `src/fanspeed.py` | Optional GPIO tachometer reader for a case fan |
 | `src/appicon.py` | Builds the window icon from `icons/` |
-| `src/autoconfig.py` | Generates the default configuration from the hardware (NVMe root, Argon ONE UP); run by the package install and used in memory when there is no config file |
+| `src/autoconfig.py` | Built-in defaults from the hardware (NVMe root, Argon ONE UP), and `Settings`, which reads and writes the settings file |
+| `src/version.py` | The version number, from `debian/changelog` (the only place it's set; the package build copies it to `/usr/lib/sysmon/app/VERSION`) |
+| `src/userconfig.py` | Where the per-user settings file lives, one-time migration from `/etc/sysmon.ini`, and atomic saving |
+| `src/settingsdialog.py` | The **File → Settings** dialog |
 | `icons/` | `sysmonicon.svg` (the master icon), `sysmon<N>x<N>.png` renders of it at 16–256 px, and `make_icons.py`, which regenerates the PNGs after the SVG changes |
-| `sysmon.ini` | Sample configuration file |
+| `sysmon.ini` | Sample settings file |
 | `tests/` | pytest suite (see [Testing](#testing)); `tests/fixtures/` holds its data files |
 | `debian/` | Debian packaging; build it with `build_package.sh` (see [Installation](#installation)) |
 
@@ -238,23 +237,21 @@ All chart classes live in `src/charts.py`. Charts keep Qt Charts' padding to a m
 
 ## Configuration
 
-The configuration file is `/etc/sysmon.ini`; a sample is provided as `sysmon.ini` in this repository. The file uses standard INI format. Missing sections and keys are silently replaced with defaults, and a file that can't be parsed is treated as empty from the point of the error onward.
+Settings are per user, in `~/.config/sysmon/sysmon.ini` (or `$XDG_CONFIG_HOME/sysmon/sysmon.ini`). The easiest way to change them is **File → Settings**; you can also edit the file by hand (a sample is provided as `sysmon.ini` in this repository). It uses standard INI format. The file is optional: anything it doesn't set falls back to the [built-in defaults](#built-in-defaults), key by key, and a file that can't be parsed is treated as empty from the point of the error onward.
 
-### Generated defaults
+Older versions used a shared `/etc/sysmon.ini`. If it exists and you have no personal file yet, sysmon copies it to your personal file the first time it runs, and doesn't read it after that.
 
-When the package is installed and `/etc/sysmon.ini` doesn't exist, it is generated from the hardware by `src/autoconfig.py`. If sysmon starts and finds no file at all (for example when run from the repository), it applies the same rules in memory. The rules are:
+**Why per user, not `/etc`:** sysmon runs as you and reaches root only through `sudo smartctl`, so sudo, not the settings file, decides what root access you have. A personal file can't give you anything you couldn't already do. A shared file that users could edit would be the risk, because one user could then choose the `smartctl` options another user's sysmon runs as root. As a further safeguard, `[smartctl]` values are limited to `-d TYPE`.
+
+### Built-in defaults
+
+sysmon works these out from the hardware at every start (`src/autoconfig.py`):
 
 - **`lo`** is always hidden from the Network I/O chart.
 - If the **root filesystem is on an NVMe drive**, `mmcblk0` (the SD card or eMMC) is hidden from both the Temperature and Disk I/O charts.
 - On an **Argon ONE UP**, `eth0` is hidden: the CM5 module has an Ethernet controller, but the ONE UP doesn't wire it to a port. A ONE UP is recognised as a Compute Module 5 with the laptop's built-in keyboard (USB `6080:8060` or `6080:8061`) or built-in display (EDID manufacturer `BOE`, product `0x088b`). The CM5 on its own can't be told apart from other carrier boards.
 
-The generated file lists what was detected at the top. It is never regenerated while it exists; to regenerate it, delete it and run:
-
-```bash
-sudo /usr/lib/sysmon/venv/bin/python3 /usr/lib/sysmon/app/src/autoconfig.py --write /etc/sysmon.ini
-```
-
-To preview what would be generated, run `python3 src/autoconfig.py` (it prints the file).
+To see the defaults for your machine, run `python3 src/autoconfig.py` (it prints them as a settings file, with what was detected at the top).
 
 List values are comma-separated; spaces and double quotes around items are ignored, so `lo, eth0` and `"lo,eth0"` are equivalent.
 
@@ -311,7 +308,7 @@ The GPIO pin is released when the window closes.
 
 ### `[smartctl]`: per-drive smartctl options (optional)
 
-Some drives need extra `smartctl` arguments to be read correctly; for example, drives behind a USB-SATA bridge need `-d sat`. Add one entry per drive that needs it.
+Some drives need a `smartctl` device type to be read correctly; for example, drives behind a USB-SATA bridge need `-d sat`. Add one entry per drive that needs it, or choose the type in **File → Settings**.
 
 ```ini
 [smartctl]
@@ -321,9 +318,9 @@ Some drives need extra `smartctl` arguments to be read correctly; for example, d
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `<device>` | *(none)* | The key is the device name (e.g. `sda`). The value is split into arguments like a shell would and inserted before `-A`, giving `sudo smartctl -d sat -A /dev/sda`. |
+| `<device>` | *(none)* | The key is the device name (e.g. `sda`). The value must be `-d TYPE` (`-dTYPE` and `--device=TYPE` also work), giving `sudo smartctl -d sat -A /dev/sda`. |
 
-Without an entry, the command is `sudo smartctl -A /dev/<device>`.
+Without an entry, the command is `sudo smartctl -A /dev/<device>`. Because `smartctl` runs as root, any other option (for example `-s`, `-t` or `--set`, which change drive settings) is ignored with a warning, and the command runs without it.
 
 ## Testing
 
@@ -340,9 +337,12 @@ The tests never touch real hardware. Kernel files come from a temporary fake `/p
 | `test_configfile.py` | values, lists, defaults, unparseable files, and the deliberate duplicate key in `tests/fixtures/test.ini` |
 | `test_fanspeed.py` | RPM calculation, bounce rejection, stopped-fan timeout, GPIO setup and release |
 | `test_scaling.py` | unit tiers and Y-axis sizing for the disk and network charts |
-| `test_monitor_window.py` | the main window: case fan setup (including bad pins), drive filters, collapsing charts by their title, plot height at the minimum window size, saved view settings and their migration from oneUpMon, and the Help → Repository link |
+| `test_monitor_window.py` | the main window: case fan setup (including bad pins), drive filters, collapsing charts by their title, plot height at the minimum window size, saved view settings and their migration from oneUpMon, migrating `/etc/sysmon.ini`, rebuilding the window after File → Settings (releasing the case fan's GPIO pin first), and the Help → Repository link |
 | `test_icons.py` | every icon size exists at its stated size, and the window icon loads them |
-| `test_autoconfig.py` | generated defaults: root disk detection (NVMe, SD, whole disk), Argon ONE UP detection by keyboard or display (and not on a Pi 5 or a plain CM5), the rendered file, and `--write` never overwriting |
+| `test_autoconfig.py` | built-in defaults: root disk detection (NVMe, SD, whole disk), Argon ONE UP detection by keyboard or display (and not on a Pi 5 or a plain CM5); writing and reading back settings, including empty lists overriding defaults |
+| `test_version.py` | the version comes from `debian/changelog` and matches what dpkg builds the package with |
+| `test_userconfig.py` | the per-user settings path, one-time migration from `/etc/sysmon.ini`, and atomic saving |
+| `test_settingsdialog.py` | the File → Settings form: showing and editing settings, keeping settings for absent devices, rejecting invalid `smartctl` types, Reset to defaults |
 | `test_rolling_chart_properties.py` | [hypothesis](https://hypothesis.readthedocs.io/) property tests: random traffic must always display correctly and stay on-screen (skipped if hypothesis isn't installed) |
 
 Linting and type checking use the project's `.pylintrc` and `mypy.ini`; both currently report no issues:

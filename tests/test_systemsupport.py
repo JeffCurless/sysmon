@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """Tests for systemsupport.py, run against a fake /proc and /sys (see conftest)."""
 # pylint: disable=redefined-outer-name,missing-function-docstring,unused-argument,protected-access
 # (pytest fixtures are injected as same-named arguments; test names are their docs)
@@ -203,10 +207,34 @@ def test_drive_temp_command_line(smart, fake_smartctl):
                      ["sudo", "smartctl", "-d", "sat", "-A", "/dev/sda"]]
 
 
-def test_drive_temp_malformed_extra_flags(smart, fake_smartctl):
+@pytest.mark.parametrize("value", ['"unterminated', "-s off", "-d sat -t long", "--set=standby,now"])
+def test_drive_temp_rejected_setting_runs_without_it(smart, fake_smartctl, capsys, value):
     calls = fake_smartctl("")
-    assert smart.driveTemp("sda", '"unterminated') == 0.0
-    assert not calls   # never launched
+    smart.driveTemp("sda", value)
+    smart.driveTemp("sda", value)
+    assert calls == [["sudo", "smartctl", "-A", "/dev/sda"]] * 2
+    assert capsys.readouterr().out.count("only '-d TYPE' is allowed") == 1   # reported once
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("-d sat", ["-d", "sat"]),
+    ("-dsat", ["-d", "sat"]),
+    ("--device=nvme", ["-d", "nvme"]),
+    ("-d sat,12", ["-d", "sat,12"]),
+    ("-d usbjmicron,0", ["-d", "usbjmicron,0"]),
+    ("-d areca,1/2", ["-d", "areca,1/2"]),
+])
+def test_smartctl_device_args_accepts_device_type(value, expected):
+    assert systemsupport.smartctl_device_args(value) == expected
+
+
+@pytest.mark.parametrize("value", [
+    None, "", "-s off", "-t long", "--set=standby,now", "-B /etc/shadow",
+    "-d sat -t long", "-d", "-d -s", "-d sat;reboot", "-d $(reboot)", "-d sat`id`",
+    '"unterminated', "-d " + "x" * 40,
+])
+def test_smartctl_device_args_rejects_everything_else(value):
+    assert systemsupport.smartctl_device_args(value) is None
 
 
 @pytest.mark.parametrize("exc", [

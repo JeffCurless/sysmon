@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """
 Render the PNG icon set from sysmonicon.svg.
 

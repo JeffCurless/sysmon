@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 # Build the sysmon Debian package.
 #
 # Usage:  ./build_package.sh [--skip-tests] [--install]

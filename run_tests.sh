@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 # Run every check for sysmon: the pytest suite, pylint, and mypy.
 #
 # Usage:  ./run_tests.sh [pytest args...]

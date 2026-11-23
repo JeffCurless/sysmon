@@ -1,29 +1,41 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
 
 """
-Application that monitors current CPU and Drive temp, along with fan speed and IO utilization
-Requires: PyQt6 (including QtCharts)
+sysmon: a PyQt6 system monitor for Raspberry Pi based systems.
 
+This is the main program.  It builds the window (CPU utilization, disk I/O,
+network I/O, temperature and, on a Pi 5 / CM5, fan speed charts), refreshes
+every chart once a second from ``systemsupport`` and ``fanspeed``, and
+provides the File, View and Help menus.  Settings come from the user's file
+(``userconfig``) layered over hardware defaults (``autoconfig``).
+
+Requires: PyQt6 (including QtCharts), gpiozero, RPi.GPIO, smartmontools.
 """
 
+import html
 import math
 import os
 import sys
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, QSettings
+from PyQt6.QtCore import QTimer, QUrl, QSettings
 from PyQt6.QtGui import QPalette, QColor, QAction, QDesktopServices
-from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
-                              QHBoxLayout, QLabel, QMainWindow, QMenu, QMenuBar, QMessageBox,
-                              QTabWidget,
-                              QVBoxLayout, QWidget, QGridLayout)
+from PyQt6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QMainWindow, QMenu, QMenuBar,
+                             QMessageBox, QWidget, QGridLayout)
 
 from systemsupport import CPUInfo, CPULoad, multiDriveStat, NetworkLoad
 from configfile import ConfigClass
 import autoconfig
+from autoconfig import MAX_BCM_PIN, Settings
+import userconfig
+from settingsdialog import SettingsDialog
 from fanspeed import GetCaseFanSpeed
 from charts import DATA_WINDOW, RollingChart, RollingChartDynamic, CollapsibleChart
 from appicon import app_icon
+from version import version
 
 # --------------------------
 # Globals
@@ -33,10 +45,9 @@ MIN_WIDTH   = 1000
 MIN_HEIGHT  = 800
 
 APP_NAME = "sysmon"
-REPO_URL = "https://github.com/JeffCurless/systemmonitor"
+REPO_URL = "https://github.com/JeffCurless/sysmon"
 OLD_APP_NAME = "oneUpMon"    # name before the rename; its settings are migrated once
 
-MAX_BCM_PIN = 27    # highest GPIO pin on the 40-pin header (BCM numbering)
 
 
 def apply_dark_palette(app: QApplication) -> None:
@@ -62,29 +73,43 @@ def apply_dark_palette(app: QApplication) -> None:
     app.setPalette(palette)
 
 
+# The window on screen.  File -> Settings replaces it, so main() can't simply
+# hold it in a local variable; a window with no Python reference would be
+# garbage-collected.
+_current_window: list["MonitorWindow"] = []
+
+
 class MonitorWindow(QMainWindow):
     '''
-    Creating a window to monitor various system aspects.
+    The main window: the charts, the menus, and the 1-second refresh timer.
 
     Parameters:
-        refresh_ms  - Time between refreshes of data on screen, in milliseconds, the
-                      default is 1 second.
-        window      - How much data do we want to store in the graph?  Each data point
-                      is a data refresh period.
-        Parent      - Owning parent of this window... default is None.
+        refresh_ms         - Time between refreshes, in milliseconds (default 1000).
+        keepWindow         - Samples of history kept in each chart (one per refresh).
+        parent             - Optional parent widget.
+        config_path        - This user's settings file; None means
+                             ``userconfig.user_config_path()``.
+        system_config_path - The old shared /etc file, copied to *config_path*
+                             once if that doesn't exist yet.
     '''
     def __init__(self, refresh_ms: int = 1000, keepWindow: int = DATA_WINDOW, parent: QWidget | None = None,
-                 config_path: str = "/etc/sysmon.ini"):
+                 config_path: str | None = None, system_config_path: str = userconfig.SYSTEM_CONFIG):
         super().__init__(parent)
+        if config_path is None:
+            config_path = userconfig.user_config_path()
+        self.config_path = str(config_path)
+        # Kept so File -> Settings can rebuild the window with the same arguments.
+        self._refresh_ms = refresh_ms
+        self._keep_window = keepWindow
+        self._system_config_path = str(system_config_path)
 
         self.settings = QSettings(APP_NAME, APP_NAME)
         self._migrate_old_settings()
 
         # Get all the filters loaded
-        self.config = ConfigClass(config_path)
-        if not self.config.loaded:
-            # No config file: use the same defaults the package would have written.
-            self.config.loadString(autoconfig.render(autoconfig.detect()))
+        # Settings: this user's file over the built-in hardware defaults.
+        userconfig.migrate(self.config_path, self._system_config_path)
+        self.config = ConfigClass(self.config_path, defaults=autoconfig.render(autoconfig.detect()))
         self.driveTempFilter = self.config.getValueAsList( 'drive', 'temp_ignore' )
         self.drivePerfFilter = self.config.getValueAsList( 'drive', 'perf_ignore' )
 
@@ -208,6 +233,11 @@ class MonitorWindow(QMainWindow):
         assert menubar is not None   # QMainWindow creates its menu bar on demand
 
         file_menu = self._add_menu(menubar, '&File')
+        settings_act = QAction('&Settings…', self)
+        settings_act.setShortcut('Ctrl+,')
+        settings_act.triggered.connect(self._open_settings)
+        file_menu.addAction(settings_act)
+        file_menu.addSeparator()
         close_act = QAction('&Close', self)
         close_act.setShortcut('Ctrl+Q')
         close_act.triggered.connect(self.close)
@@ -259,9 +289,6 @@ class MonitorWindow(QMainWindow):
             view_menu.addAction(act)
 
         help_menu = self._add_menu(menubar, '&Help')
-        help_act = QAction('&Configuration Help', self)
-        help_act.triggered.connect(self._show_help)
-        help_menu.addAction(help_act)
         repo_act = QAction('&Repository', self)
         repo_act.triggered.connect(lambda: QDesktopServices.openUrl(
             QUrl(REPO_URL)))
@@ -332,145 +359,72 @@ class MonitorWindow(QMainWindow):
             print( f"Ignoring [cooling] casefan = {pin}: could not set up GPIO: {error}" )
             return None
 
-    def closeEvent(self, event) -> None:
-        '''Stop polling and release GPIO resources deterministically on exit.'''
+    def _release(self) -> None:
+        '''Stop polling and release the case fan's GPIO pin (safe to call twice).'''
         self.timer.stop()
         if self.caseFan is not None:
             self.caseFan.close()
+            self.caseFan = None
+
+    def closeEvent(self, event) -> None:
+        '''Stop polling and release GPIO resources deterministically on exit.'''
+        self._release()
         super().closeEvent(event)
 
+    def _open_settings(self) -> None:
+        '''File -> Settings: edit this user's settings, then rebuild the window.'''
+        dialog = SettingsDialog(Settings.from_config(self.config),
+                                drives=multiDriveStat().drives,
+                                interfaces=NetworkLoad().names,
+                                parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        text = autoconfig.render(dialog.result_settings())
+        if not userconfig.save(self.config_path, text):
+            QMessageBox.warning(self, "Settings not saved",
+                                f"Could not write {self.config_path}; see the terminal for details.")
+            return
+        self._reopen()
+
+    def _reopen(self) -> "MonitorWindow":
+        '''
+        Replace this window with a new one built from the saved settings.
+
+        Charts are built from the settings, so applying them means rebuilding;
+        chart history restarts, while shown/collapsed state (QSettings) is kept.
+        This window's GPIO pin is released first so the new window can claim it,
+        and the new window is shown before this one closes, so Qt doesn't quit
+        when its last window closes.
+        '''
+        self._release()
+        new = MonitorWindow(refresh_ms=self._refresh_ms, keepWindow=self._keep_window,
+                            config_path=self.config_path, system_config_path=self._system_config_path)
+        new.setGeometry(self.geometry())
+        new.show()
+        _current_window[:] = [new]     # hold the new window; the old one can be freed
+        self.close()
+        return new
+
+    def about_text(self) -> str:
+        '''The Help -> About text (rich text).'''
+        home = os.path.expanduser("~")
+        settings_file = self.config_path
+        if settings_file.startswith(home + os.sep):
+            settings_file = "~" + settings_file[len(home):]
+        history = self._keep_window * self._refresh_ms // 1000
+        return (
+            f'<h3>sysmon {html.escape(version())}</h3>'
+            '<p>A system monitor for Raspberry Pi based systems.</p>'
+            '<p>Live charts of CPU utilization, disk and network I/O, '
+            f'temperatures and fan speed, with {history} seconds of history.</p>'
+            '<p>Settings: <b>File → Settings</b><br>'
+            f'<tt>{html.escape(settings_file)}</tt></p>'
+            f'<p>Copyright © 2026 Jeff Curless<br>MIT License<br>{REPO_URL}</p>'
+        )
+
     def _show_about(self):
-        QMessageBox.about(
-            self,
-            'About sysmon',
-            '<b>sysmon</b> — System Monitor<br><br>'
-            'A graphical system monitor for <b>Raspberry Pi</b> based systems.<br><br>'
-            'Displays live rolling charts for CPU utilization, disk I/O,<br>'
-            'network I/O, temperatures, and fan speed — updating every<br>'
-            'second with 60 seconds of history.<br><br>'
-            'Configuration file: <tt>/etc/sysmon.ini</tt>'
-        )
-
-    def _show_help(self):
-        dlg = QDialog(self)
-        dlg.setWindowTitle('Configuration Help — /etc/sysmon.ini')
-        dlg.resize(680, 420)
-        dlg.setStyleSheet("""
-            QDialog          { background: #1e1e1e; }
-            QTabWidget::pane { border: 1px solid #444; background: #272727; }
-            QTabBar::tab     { background: #2d2d2d; color: #999;
-                               padding: 6px 18px; margin-right: 2px; }
-            QTabBar::tab:selected { background: #272727; color: #e8e8e8;
-                                    border-top: 2px solid #5599dd; }
-            QLabel           { color: #cccccc; }
-            QPushButton      { color: #cccccc; background: #3c3c3c;
-                               border: 1px solid #555; padding: 4px 20px;
-                               border-radius: 3px; }
-            QPushButton:hover { background: #4a4a4a; }
-        """)
-
-        tabs = QTabWidget(dlg)
-
-        def add_tab(tab_name, intro, params):
-            # params: list of (key_syntax, description, example_or_None)
-            page = QWidget()
-            vbox = QVBoxLayout(page)
-            vbox.setContentsMargins(16, 14, 16, 14)
-            vbox.setSpacing(0)
-
-            intro_lbl = QLabel(intro)
-            intro_lbl.setWordWrap(True)
-            intro_lbl.setStyleSheet(
-                "color: #888; font-size: 11px; font-style: italic; margin-bottom: 12px;")
-            vbox.addWidget(intro_lbl)
-
-            for key, desc, example in params:
-                key_lbl = QLabel(key)
-                key_lbl.setStyleSheet(
-                    "color: #e8e8e8; font-family: monospace; font-size: 13px; "
-                    "font-weight: bold; margin-top: 12px;")
-                vbox.addWidget(key_lbl)
-
-                desc_lbl = QLabel(desc)
-                desc_lbl.setWordWrap(True)
-                desc_lbl.setStyleSheet(
-                    "color: #aaaaaa; font-size: 11px; margin-left: 16px; margin-top: 3px;")
-                vbox.addWidget(desc_lbl)
-
-                if example:
-                    ex_lbl = QLabel(example)
-                    ex_lbl.setStyleSheet(
-                        "color: #7ec8e3; font-family: monospace; font-size: 11px; "
-                        "margin-left: 16px; margin-top: 5px; background: #2a2a3a; "
-                        "padding: 4px 10px; border-radius: 3px;")
-                    ex_lbl.setTextInteractionFlags(
-                        Qt.TextInteractionFlag.TextSelectableByMouse)
-                    vbox.addWidget(ex_lbl)
-
-            vbox.addStretch()
-            tabs.addTab(page, tab_name)
-
-        add_tab(
-            "[drive]",
-            "Controls which block devices appear in charts. "
-            "Values are comma-separated device names, exactly as listed in "
-            "/sys/block (not prefixes): 'mmcblk0' hides the SD card, 'mmcblk' does not.",
-            [
-                ("temp_ignore = <devices>",
-                 "Exclude these drives from the Temperature chart. "
-                 "Use for devices with no thermal sensor: SD cards, USB storage, RAID members.",
-                 "temp_ignore = mmcblk0, sda"),
-                ("perf_ignore = <devices>",
-                 "Exclude these drives from the Disk I/O chart.",
-                 "perf_ignore = mmcblk0"),
-            ],
-        )
-
-        add_tab(
-            "[network]",
-            "Controls which network interfaces appear in the Network I/O chart. "
-            "Values are exact interface names (not prefixes).",
-            [
-                ("device_ignore = <interfaces>",
-                 "Comma-separated interface names to exclude. "
-                 "Typically 'lo' (loopback) and any unused physical ports.",
-                 "device_ignore = lo, eth0"),
-            ],
-        )
-
-        add_tab(
-            "[cooling]",
-            "Optional GPIO tachometer for a case fan. "
-            "Omit this section entirely if no external fan is fitted.",
-            [
-                ("casefan = <BCM GPIO pin>",
-                 "GPIO pin number (0-27) for the fan tachometer wire. "
-                 "The RPM reading appears on the Fan Speed chart alongside the CPU fan "
-                 "(Raspberry Pi 5 only). An invalid pin is ignored with a message.",
-                 "casefan = 18"),
-            ],
-        )
-
-        add_tab(
-            "[smartctl]",
-            "Pass extra flags to smartctl for specific drives. Required for drives behind "
-            "USB-to-SATA bridges that need a SAT passthrough hint to report SMART data.",
-            [
-                ("<device> = <flags>",
-                 "Key is the bare device name (without /dev/). "
-                 "Value is appended to 'smartctl -A /dev/<device>'.",
-                 "sda = -d sat"),
-            ],
-        )
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(dlg.close)
-
-        outer = QVBoxLayout(dlg)
-        outer.addWidget(tabs)
-        outer.addWidget(buttons)
-
-        dlg.exec()
+        '''Help -> About: the version, what sysmon does, and where its settings are saved.'''
+        QMessageBox.about(self, 'About sysmon', self.about_text())
 
     def refresh_metrics(self):
         '''
@@ -569,8 +523,8 @@ def main():
     app = QApplication(sys.argv)
     apply_dark_palette(app)
     app.setWindowIcon(app_icon())
-    w = MonitorWindow(refresh_ms=1000)
-    w.show()
+    _current_window[:] = [MonitorWindow(refresh_ms=1000)]
+    _current_window[0].show()
     sys.exit(app.exec())
 
 if __name__ == "__main__":

@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """
 Chart widgets for sysmon: rolling line charts with fixed or auto-scaling Y axes,
 and the collapsible wrapper that lets the user fold a chart away by clicking
@@ -53,13 +57,16 @@ class ChartView(QChartView):
 
 class RollingChart(QWidget):
     '''
-    A reusable chart widget with one or more QLineSeries and a rolling X window.
+    A chart widget with one or more lines and a rolling X window, and a
+    fixed Y axis range.
 
     Parameters:
         title       - Chart title.
-        series_defs - List of (name, color_qt_str or None) for each line.
-        y_min,y_max - Fixed Y axis range.
-        window      - Number of points to keep (points are 1 per tick by default).
+        series_defs - List of (name, color) for each line; color is a QColor,
+                      a "#RRGGBB" string, or None for the theme's colour.
+        y_min,y_max - Y axis range.
+        window      - Number of samples to keep (one per refresh).
+        parent      - Optional parent widget.
     '''
     def __init__(self, title: str, series_defs: list[tuple], y_min: float, y_max: float,
                  window: int = DATA_WINDOW, parent: QWidget | None = None):
@@ -272,11 +279,11 @@ class scaleValues:
 
     def scaleDown( self, value: float ) -> float:
         '''
-        Divide *value* by 1024 (shift one tier down for in-place point
-        rescaling when the chart advances a tier).
+        Convert *value* into the next larger unit (divide by 1024).  Used to
+        rescale the plotted history when the chart moves up a tier.
 
         Parameters:
-            value - Y coordinate in the current tier's units.
+            value - Y value in the current tier's unit.
 
         Returns:
             *value* / 1024.
@@ -285,14 +292,14 @@ class scaleValues:
 
     def scaleUp( self, value: float ) -> float:
         '''
-        Multiply *value* by 1024 (shift one tier up for in-place point
-        rescaling when the chart retreats a tier).
+        Convert *value* into the next smaller unit (multiply by 1024).  Used to
+        rescale the plotted history when the chart moves down a tier.
 
         Parameters:
-            value - Y coordinate in the current tier's units.
+            value - Y value in the current tier's unit.
 
         Returns:
-            *value* × 1024.
+            *value* x 1024.
         '''
         return value * 1024
 
@@ -314,9 +321,10 @@ class RollingChartDynamic(RollingChart):
 
     Parameters:
         title       - Chart title; the current unit is appended, e.g. "Disk I/O (MiB/s)".
-        series_defs - List of (name, color_qt_str or None) for each line.
+        series_defs - List of (name, color) for each line, as for ``RollingChart``.
         range_y     - Ordered list of (label, divisor) tiers, see ``scaleValues``.
-        window      - Number of points to keep.
+        window      - Number of samples to keep.
+        parent      - Optional parent widget.
     '''
     def __init__(self, title : str, series_defs: list[tuple], range_y : list[tuple],
                  window: int = DATA_WINDOW, parent: QWidget | None = None):
@@ -330,16 +338,14 @@ class RollingChartDynamic(RollingChart):
 
     def getBestFit( self, value: float ) -> int:
         '''
-        Return the smallest power-of-two Y-axis ceiling that is greater than
-        *value*, from a fixed candidate set.  Used to keep the Y axis tidy
-        after a scale change.
+        The Y axis ceiling for *value*: the smallest power of two, at least 4,
+        that is greater than *value*.
 
         Parameters:
-            value - Current maximum Y value in the chart (in current tier units).
+            value - Largest Y value in the chart, in the current tier's unit.
 
         Returns:
-            An integer ceiling value (4, 8, 16, … 1024, or higher if *value*
-            has not yet been rescaled into the 0–1024 range).
+            The ceiling (4, 8, 16, ...).
         '''
         ceiling = 4
         while ceiling <= value:
@@ -348,12 +354,17 @@ class RollingChartDynamic(RollingChart):
 
     def append(self, values: list[float | None]):
         '''
-        Append one sample (for each series) at the next x value. Handles rolling window.
-        values must match the number of series.
+        Append one sample for each series at the next x value, trim points that
+        have left the window, and rescale if needed.
+
+        Values are converted to the current unit.  If any converted value is over
+        1024, the chart moves up one tier and the whole history is converted; if
+        everything in the window is below 1, it moves down one tier.  The Y axis
+        is then sized with ``getBestFit``.
 
         Parameters:
-            values - One number per data series in the chart; None marks a
-                    missing sample, which is skipped.
+            values - One raw value (e.g. bytes/s) per series; None marks a
+                     missing sample, which is skipped.
         '''
         scaleUp = False
         self.xpos += 1
@@ -419,7 +430,10 @@ class RollingChartDynamic(RollingChart):
         self._notify_title()
 
     def _notify_title(self) -> None:
-        '''Tell the header (if one is attached) that the unit tier changed.'''
+        '''
+        Report the new title, e.g. "Disk I/O (MiB/s)", to ``on_title_change``
+        (set by ``CollapsibleChart``) after the unit tier changed.
+        '''
         if self.on_title_change is not None:
             # pylint cannot see that this is assigned a callable after __init__
             self.on_title_change(f"{self.title} ({self.scale.name})")  # pylint: disable=not-callable

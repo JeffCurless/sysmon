@@ -1,4 +1,4 @@
-.TH SYSMON 1 "November 2026" "sysmon 1.0.0" "User Commands"
+.TH SYSMON 1 "November 2026" "sysmon" "User Commands"
 .SH NAME
 sysmon \- graphical system monitor for Raspberry Pi
 .SH SYNOPSIS
@@ -18,22 +18,37 @@ through
 without a password.
 .SH FILES
 .TP
-.I /etc/sysmon.ini
-Configuration file for hiding drives and network interfaces,
-setting a case fan tachometer GPIO pin, and passing extra
+.I ~/.config/sysmon/sysmon.ini
+Per-user settings: drives and network interfaces to hide, an optional
+case fan tachometer GPIO pin, and
 .B smartctl
-options. If it does not exist when the package is installed, it is
-generated from the hardware: the loopback interface
+device types. Edit them with
+.B File \(-> Settings
+in sysmon, or by hand. The file is optional: anything it does not set
+follows built-in defaults worked out from the hardware at every start
+(the loopback interface
 .B lo
 is hidden; if the root filesystem is on an NVMe drive,
 .B mmcblk0
-is hidden; and on an Argon ONE UP,
+is hidden; on an Argon ONE UP,
 .B eth0
-(which is not wired to a port) is hidden. An existing file is never
-changed, and it is removed when the package is purged. If the file is
-missing when sysmon starts, the same rules are applied in memory. An
-annotated example is installed at
+is hidden). Because
+.B smartctl
+runs as root, a
+.B [smartctl]
+value may only be
+.BI "-d " TYPE ;
+anything else is ignored. If
+.B $XDG_CONFIG_HOME
+is set, the file is in
+.IR $XDG_CONFIG_HOME/sysmon/ .
+An annotated example is installed at
 .IR /usr/share/doc/sysmon/examples/sysmon.ini .
+.TP
+.I /etc/sysmon.ini
+Used by older versions. If it exists and the per-user file does not,
+it is copied to the per-user file the first time sysmon runs, and is
+not read after that.
 .TP
 .I /usr/lib/sysmon/venv
 Python virtual environment the application runs in, created when the

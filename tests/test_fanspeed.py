@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """Tests for fanspeed.GetCaseFanSpeed with a mocked RPi.GPIO and a controlled clock."""
 # pylint: disable=redefined-outer-name,missing-function-docstring,unused-argument,protected-access
 # (pytest fixtures are injected as same-named arguments; test names are their docs)

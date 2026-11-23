@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """Tests for the icon set in icons/ and the window icon built from it (appicon.py)."""
 import pytest
 from PyQt6.QtGui import QImage

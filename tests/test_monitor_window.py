@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """
 Tests that build the real MonitorWindow (headless) against fake hardware:
 a fake /proc and /sys, a fake smartctl, a mock GPIO module, and a temporary
@@ -15,6 +19,7 @@ from conftest import REPO_ROOT, fixture_text
 import fanspeed
 import sysmon
 import systemsupport
+import version
 
 
 @pytest.fixture
@@ -43,11 +48,14 @@ def make_window(fake_root, gpio, tmp_path, monkeypatch, qtbot):
     QSettings.setPath(QSettings.Format.NativeFormat, QSettings.Scope.UserScope,
                       str(tmp_path / "settings"))
 
-    def make(ini_text: str = "", config_path=None):
+    def make(ini_text: str = "", config_path=None, system_config_path=None):
         if config_path is None:
             config_path = tmp_path / "sysmon.ini"
             config_path.write_text(ini_text, encoding="utf-8")
-        window = sysmon.MonitorWindow(config_path=str(config_path))
+        if system_config_path is None:            # never read the real /etc/sysmon.ini
+            system_config_path = tmp_path / "etc-sysmon.ini"
+        window = sysmon.MonitorWindow(config_path=str(config_path),
+                                      system_config_path=str(system_config_path))
         qtbot.addWidget(window)          # closed (timer stopped, GPIO released) at teardown
         return window
     return make
@@ -135,6 +143,38 @@ def test_missing_config_uses_generated_defaults(make_window, fake_root, tmp_path
     assert series_names(window.cpu_chart) == ["CPU", "nvme0n1"]
     assert series_names(window.io_chart) == ["nvme0n1 Read", "nvme0n1 Write"]
     assert series_names(window.network_chart) == ["wlan0 Read", "wlan0 Write"]
+
+
+def test_system_config_is_migrated_on_first_run(make_window, tmp_path):
+    system = tmp_path / "etc.ini"
+    system.write_text("[network]\ndevice_ignore = lo, wlan0\n", encoding="utf-8")
+    personal = tmp_path / "home" / "sysmon" / "sysmon.ini"
+    window = make_window(config_path=personal, system_config_path=system)
+    assert personal.read_text(encoding="utf-8") == system.read_text(encoding="utf-8")
+    assert series_names(window.network_chart) == []
+
+
+def test_reopen_applies_saved_settings(make_window, gpio, tmp_path):
+    personal = tmp_path / "sysmon.ini"
+    window = make_window("[network]\ndevice_ignore = lo\n[cooling]\ncasefan = 18\n", config_path=None)
+    window.show()
+    assert series_names(window.network_chart) == ["wlan0 Read", "wlan0 Write"]
+    old_fan = window.caseFan
+    assert old_fan is not None
+
+    personal.write_text("[network]\ndevice_ignore = lo, wlan0\n[cooling]\ncasefan = 18\n", encoding="utf-8")
+    gpio.reset_mock()
+    new = window._reopen()
+    try:
+        assert series_names(new.network_chart) == []
+        assert new.isVisible() and not window.isVisible()
+        assert window.caseFan is None and not window.timer.isActive()
+        # The old window released pin 18 before the new one claimed it.
+        calls = [c[0] for c in gpio.mock_calls]
+        assert calls.index("cleanup") < calls.index("add_event_detect")
+        assert new.geometry() == window.geometry()
+    finally:
+        new.close()
 
 
 # --------------------------------------------------------------------------
@@ -254,7 +294,7 @@ def test_existing_sysmon_settings_win_over_old(make_window, tmp_path):
     assert window.settings.value("visible/disk_io", type=bool) is True
 
 
-def test_help_repository_opens_systemmonitor_repo(make_window, monkeypatch):
+def test_help_repository_opens_sysmon_repo(make_window, monkeypatch):
     opened = []
     monkeypatch.setattr(sysmon.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()))
     window = make_window("")
@@ -264,4 +304,29 @@ def test_help_repository_opens_systemmonitor_repo(make_window, monkeypatch):
     assert help_menu is not None
     repo = next(a for a in help_menu.actions() if a.text() == "&Repository")
     repo.trigger()
-    assert opened == ["https://github.com/JeffCurless/systemmonitor"]
+    assert opened == ["https://github.com/JeffCurless/sysmon"]
+
+
+# --------------------------------------------------------------------------
+# Help -> About
+# --------------------------------------------------------------------------
+
+def test_about_shows_version_and_settings_file(make_window, monkeypatch, tmp_path):
+    window = make_window("")
+    text = window.about_text()
+    assert f"sysmon {version.version()}" in text
+    assert version.version() != "unknown"
+    assert str(tmp_path / "sysmon.ini") in text
+    assert "60 seconds of history" in text
+    assert "MIT License" in text and sysmon.REPO_URL in text
+
+    shown = []
+    monkeypatch.setattr(sysmon.QMessageBox, "about", lambda parent, title, body: shown.append((title, body)))
+    window._show_about()
+    assert shown == [("About sysmon", text)]
+
+
+def test_about_shortens_home_to_tilde(make_window, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    window = make_window("")
+    assert "<tt>~/sysmon.ini</tt>" in window.about_text()
