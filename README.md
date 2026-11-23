@@ -50,13 +50,15 @@ Build the `.deb` from the repository, then install it with `apt`, which pulls in
 
 ```bash
 sudo apt install debhelper              # one-time build tool
-dpkg-buildpackage -us -uc -b            # writes ../sysmon_<version>_all.deb
-sudo apt install ../sysmon_*_all.deb
+./build_package.sh                      # tests, builds, lintian; writes dist/sysmon_<version>_all.deb
+sudo apt install ./dist/sysmon_*_all.deb
 ```
+
+`build_package.sh` runs `./run_tests.sh` first and stops if any check fails, then builds with `dpkg-buildpackage -us -uc -b`, moves the results into `dist/`, cleans the build tree, and checks the `.deb` with `lintian` (if installed). Options: `--skip-tests` skips the checks, and `--install` (re)installs the new package with `apt` afterwards. The version comes from `debian/changelog`.
 
 The package installs:
 
-- the application in `/usr/lib/sysmon/app`, run from its own Python virtual environment in `/usr/lib/sysmon/venv` (created at install time on top of the Debian-packaged PyQt6 and GPIO libraries, so nothing is downloaded with pip)
+- the application in `/usr/lib/sysmon/app` (`src/` and `icons/`), run from its own Python virtual environment in `/usr/lib/sysmon/venv` (created at install time on top of the Debian-packaged PyQt6 and GPIO libraries, so nothing is downloaded with pip)
 - a `sysmon` command in `/usr/bin`
 - a **System Tools** menu entry with the sysmon icon
 - an example configuration in `/usr/share/doc/sysmon/examples/sysmon.ini`
@@ -191,7 +193,7 @@ The disk and network charts rescale automatically. When a new sample is more tha
 | `icons/` | `sysmonicon.svg` (the master icon), `sysmon<N>x<N>.png` renders of it at 16–256 px, and `make_icons.py`, which regenerates the PNGs after the SVG changes |
 | `sysmon.ini` | Sample configuration file |
 | `tests/` | pytest suite (see [Testing](#testing)); `tests/fixtures/` holds its data files |
-| `debian/` | Debian packaging (see [Installing](#installing)) |
+| `debian/` | Debian packaging; build it with `build_package.sh` (see [Installation](#installation)) |
 
 ### Data flow
 
