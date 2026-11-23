@@ -3,7 +3,7 @@
 # (pytest fixtures are injected as same-named arguments; test names are their docs)
 import pytest
 
-from sysmon import RollingChartDynamic, scaleValues
+from charts import RollingChartDynamic, scaleValues
 
 TIERS = [("Bytes/s", 1), ("KiB/s", 1024), ("MiB/s", 1024**2), ("GiB/s", 1024**3)]
 

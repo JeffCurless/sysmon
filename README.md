@@ -169,7 +169,7 @@ The disk and network charts rescale automatically. When a new sample is more tha
 
 ### Showing, hiding and collapsing charts
 
-- **Click a chart's title bar** to collapse or expand it. A collapsed chart keeps collecting data, so it shows the full last 60 seconds when expanded again.
+- **Click a chart's title** (the `▼ CPU Utilization` text at the top of the chart) to collapse it to a slim `▶ CPU Utilization` bar; click the bar to expand it again. A collapsed chart keeps collecting data, so it shows the full last 60 seconds when expanded again.
 - **View menu**: turn each chart on or off. A chart that is turned off stops collecting data; when turned back on it starts empty.
 - Which charts are shown and expanded is saved in `~/.config/sysmon/sysmon.conf` and restored at the next start. (Before the app was renamed from oneUpMon, this was `~/.config/oneUpMon/oneUpMon.conf`; those settings are copied over automatically the first time sysmon runs.)
 
@@ -185,7 +185,8 @@ The disk and network charts rescale automatically. When a new sample is more tha
 
 | File | Purpose |
 |------|---------|
-| `src/sysmon.py` | GUI application (the main program): chart classes, window layout, menus, 1-second timer loop, config loading |
+| `src/sysmon.py` | GUI application (the main program): window layout, menus, 1-second timer loop, config loading |
+| `src/charts.py` | Chart widgets: rolling charts with fixed or auto-scaling Y axes, and the click-the-title collapsing wrapper |
 | `src/systemsupport.py` | Hardware data: CPU load, CPU model/temperature/fan, drive stats and temperatures, network stats |
 | `src/configfile.py` | INI file reader wrapping `configparser`; never raises, always returns the caller's default |
 | `src/fanspeed.py` | Optional GPIO tachometer reader for a case fan |
@@ -230,7 +231,9 @@ Each data source handles its own expected errors. A reading that fails is shown 
 
 - **`RollingChart`**: fixed Y axis. Points older than the 60-sample window are trimmed (binary search for the cut-off); the X axis follows the newest point.
 - **`RollingChartDynamic`**: extends `RollingChart` with an automatic unit scale. A `scaleValues` object tracks the current unit (Bytes/s, KiB/s, MiB/s, GiB/s), and once the largest visible value is above 1, the Y axis ceiling is the next power of two above it (minimum 4).
-- **`CollapsibleChart`**: wraps a chart with the clickable title bar used for collapsing; it also updates the title when a dynamic chart changes unit.
+- **`CollapsibleChart`**: makes a chart collapsible. While expanded, the title is drawn inside the chart (`ChartView` turns a click above the plot area into a toggle), so no space is spent on a separate header; while collapsed, the chart is replaced by a 20 px `▶ title` bar. It also updates both titles when a dynamic chart changes unit.
+
+All chart classes live in `src/charts.py`. Charts keep Qt Charts' padding to a minimum and put the legend on the right. Every legend gets the width of the widest one, so the stacked charts' time axes line up. Even at the minimum window size each plot is about 135 px tall, which leaves room for the Y-axis labels.
 
 ## Configuration
 
@@ -320,7 +323,7 @@ The tests never touch real hardware. Kernel files come from a temporary fake `/p
 | `test_configfile.py` | values, lists, defaults, unparseable files, and the deliberate duplicate key in `tests/fixtures/test.ini` |
 | `test_fanspeed.py` | RPM calculation, bounce rejection, stopped-fan timeout, GPIO setup and release |
 | `test_scaling.py` | unit tiers and Y-axis sizing for the disk and network charts |
-| `test_monitor_window.py` | the main window: case fan setup (including bad pins), drive filters, collapsing charts, saved view settings and their migration from oneUpMon, and the Help → Repository link |
+| `test_monitor_window.py` | the main window: case fan setup (including bad pins), drive filters, collapsing charts by their title, plot height at the minimum window size, saved view settings and their migration from oneUpMon, and the Help → Repository link |
 | `test_icons.py` | every icon size exists at its stated size, and the window icon loads them |
 | `test_rolling_chart_properties.py` | [hypothesis](https://hypothesis.readthedocs.io/) property tests: random traffic must always display correctly and stay on-screen (skipped if hypothesis isn't installed) |
 

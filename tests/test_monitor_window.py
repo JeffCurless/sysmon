@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import QPointF, QSettings, Qt
 
 from conftest import REPO_ROOT, fixture_text
 
@@ -121,18 +121,34 @@ def test_sample_config_hides_sd_card_and_unused_interfaces(make_window):
 
 
 # --------------------------------------------------------------------------
-# Collapsible chart headers
+# Collapsing charts by clicking their title
 # --------------------------------------------------------------------------
 
-def test_clicking_header_collapses_and_expands(make_window, qtbot):
+def title_point(chart):
+    '''A point (in view coordinates) on the chart's title, above the plot area.'''
+    plot = chart.chart.plotArea()
+    scene = chart.chart.mapToScene(QPointF(plot.center().x(), plot.top() / 2))
+    return chart.view.mapFromScene(scene)
+
+
+def plot_point(chart):
+    '''A point (in view coordinates) in the middle of the plot area.'''
+    scene = chart.chart.mapToScene(chart.chart.plotArea().center())
+    return chart.view.mapFromScene(scene)
+
+
+def test_clicking_title_collapses_and_bar_expands(make_window, qtbot):
     window = make_window("")
     window.show()
     section = window.io_section
     qtbot.waitExposed(window)
     assert window.io_chart.isVisible()
+    assert not section._header.isVisible()        # no header strip while expanded
 
-    qtbot.mouseClick(section._header, Qt.MouseButton.LeftButton)
+    qtbot.mouseClick(window.io_chart.view.viewport(), Qt.MouseButton.LeftButton,
+                     pos=title_point(window.io_chart))
     assert not window.io_chart.isVisible()
+    assert section._header.isVisible()            # the slim bar replaces the chart
     assert section._arrow.text() == "▶"
     assert window.settings.value("expanded/disk_io", type=bool) is False
 
@@ -142,8 +158,53 @@ def test_clicking_header_collapses_and_expands(make_window, qtbot):
 
     qtbot.mouseClick(section._header, Qt.MouseButton.LeftButton)
     assert window.io_chart.isVisible()
-    assert section._arrow.text() == "▼"
+    assert not section._header.isVisible()
     assert window.settings.value("expanded/disk_io", type=bool) is True
+
+
+def test_clicking_plot_area_does_not_collapse(make_window, qtbot):
+    window = make_window("")
+    window.show()
+    qtbot.waitExposed(window)
+    qtbot.mouseClick(window.use_chart.view.viewport(), Qt.MouseButton.LeftButton,
+                     pos=plot_point(window.use_chart))
+    assert window.use_chart.isVisible()
+
+
+def test_title_is_drawn_in_chart_and_follows_unit_tier(make_window):
+    window = make_window("")
+    chart = window.io_chart
+    assert chart.chart.title() == "▼ Disk I/O (Bytes/s)"
+    assert window.use_chart.chart.title() == "▼ CPU Utilization"
+
+    chart.append([5 * 1024 * 1024] * len(chart.series))   # 5 MiB/s forces a larger unit
+    assert chart.scale.name != "Bytes/s"
+    assert chart.chart.title() == f"▼ Disk I/O ({chart.scale.name})"
+    assert window.io_section._title_label.text() == f"Disk I/O ({chart.scale.name})"
+
+
+def test_stacked_charts_line_up(make_window, qtbot):
+    '''Legends share one width, so the full-width charts' plots start and end together.'''
+    window = make_window("")
+    window.resize(sysmon.MIN_WIDTH, sysmon.MIN_HEIGHT)
+    window.show()
+    qtbot.waitExposed(window)
+    stacked = (window.use_chart, window.io_chart, window.network_chart)
+    widths = {round(c.chart.legend().geometry().width()) for c in stacked}
+    rights = {round(c.chart.plotArea().right()) for c in stacked}
+    assert len(widths) == 1
+    assert len(rights) == 1
+
+
+def test_plot_area_is_tall_enough_at_minimum_size(make_window, qtbot):
+    '''At the smallest window size each plot must leave room for a readable Y scale.'''
+    window = make_window("")
+    window.resize(sysmon.MIN_WIDTH, sysmon.MIN_HEIGHT)
+    window.show()
+    qtbot.waitExposed(window)
+    for chart in (window.use_chart, window.io_chart, window.network_chart, window.cpu_chart, window.fan_chart):
+        assert chart is not None
+        assert chart.chart.plotArea().height() >= 100, chart.title
 
 
 # --------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import pytest
 hypothesis = pytest.importorskip("hypothesis")
 from hypothesis import given, settings, strategies as st  # pylint: disable=wrong-import-position,import-error
 
-from sysmon import RollingChartDynamic  # pylint: disable=wrong-import-position
+from charts import RollingChartDynamic  # pylint: disable=wrong-import-position
 
 TIERS = [("Bytes/s", 1), ("KiB/s", 1024), ("MiB/s", 1024**2), ("GiB/s", 1024**3)]
 WINDOW = 20          # smaller than the app's 60 so examples roll the window quickly
