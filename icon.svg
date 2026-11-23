@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Background -->
+  <rect width="256" height="256" rx="48" fill="#0d1117"/>
+
+  <!-- Subtle grid lines -->
+  <line x1="18" y1="88"  x2="238" y2="88"  stroke="#1e2d3d" stroke-width="1.5"/>
+  <line x1="18" y1="140" x2="238" y2="140" stroke="#1e2d3d" stroke-width="1.5"/>
+  <line x1="18" y1="192" x2="238" y2="192" stroke="#1e2d3d" stroke-width="1.5"/>
+
+  <!-- Temperature line — orange, gentle drift -->
+  <polyline
+    points="18,178 55,174 90,180 125,172 160,177 200,170 238,175"
+    fill="none" stroke="#f97316" stroke-width="5.5"
+    stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- Network line — cyan, moderate variation -->
+  <polyline
+    points="18,148 45,156 72,138 99,152 126,132 153,146 180,128 207,140 238,130"
+    fill="none" stroke="#06b6d4" stroke-width="6"
+    stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- CPU glow -->
+  <polyline
+    points="18,168 40,142 62,100 80,124 100,72 118,96 138,58 158,84 178,70 200,88 220,62 238,72"
+    fill="none" stroke="#22c55e" stroke-width="22"
+    stroke-linejoin="round" stroke-linecap="round" opacity="0.13"/>
+
+  <!-- CPU line — green, bold, most prominent -->
+  <polyline
+    points="18,168 40,142 62,100 80,124 100,72 118,96 138,58 158,84 178,70 200,88 220,62 238,72"
+    fill="none" stroke="#22c55e" stroke-width="8.5"
+    stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

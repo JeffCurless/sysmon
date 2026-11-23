@@ -1,0 +1,8 @@
+smartctl 7.4 2023-08-01 r5530 [aarch64-linux-6.18.60+rpt-rpi-2712] (local build)
+Copyright (C) 2002-23, Bruce Allen, Christian Franke, www.smartmontools.org
+
+/dev/mmcblk0: Unable to detect device type
+Please specify device type with the -d option.
+
+Use smartctl -h to get a usage summary
+

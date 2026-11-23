@@ -1,0 +1,31 @@
+# Pylint configuration for sysmon.
+# Run from the repo root:  pylint *.py
+
+[MAIN]
+# PyQt6 is a compiled extension; allow pylint to import it so it can see its
+# members (otherwise every Qt import is a false no-name-in-module).
+extension-pkg-allow-list=PyQt6
+# Let the tests import the top-level modules and conftest (run from the repo root).
+init-hook="import sys; sys.path[:0] = ['.', 'tests']"
+
+[MESSAGES CONTROL]
+disable=
+    # The codebase uses camelCase methods/attributes (getValue, readWriteBytes,
+    # CPUFanSpeed, ...) and Qt overrides (closeEvent) by convention.
+    invalid-name,
+    # Size/complexity heuristics: the window constructor and chart classes are
+    # long by nature and are not worth splitting just to satisfy a counter.
+    too-many-instance-attributes,
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-statements,
+    too-many-branches,
+    too-few-public-methods,
+    too-many-locals,
+
+[FORMAT]
+max-line-length=120
+
+[DESIGN]
+# Kept for when the design checks above are re-enabled.
+max-args=7

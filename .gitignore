@@ -1,0 +1,11 @@
+# Not part of the published project
+
+# Generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+
+# Named pipe created by a local tool
+.lgd-nfy0

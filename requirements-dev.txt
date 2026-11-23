@@ -1,0 +1,5 @@
+# Test dependencies (in addition to the runtime ones in README.md).
+# On Raspberry Pi OS:  sudo apt install python3-pytest python3-pytestqt python3-hypothesis
+pytest
+pytest-qt
+hypothesis
