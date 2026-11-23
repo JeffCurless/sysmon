@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+VENV=/usr/lib/sysmon/venv
+
+case "$1" in
+    configure)
+        # Recreate the venv on every configure so it always matches the
+        # current system Python. --system-site-packages lets it use the
+        # Debian-packaged PyQt6, gpiozero and RPi.GPIO; nothing is downloaded.
+        python3 -m venv --clear --system-site-packages --without-pip "$VENV"
+        "$VENV/bin/python3" -m compileall -q /usr/lib/sysmon/app >/dev/null || true
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

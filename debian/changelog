@@ -1,0 +1,5 @@
+sysmon (1.0.0) unstable; urgency=medium
+
+  * Initial Debian package.
+
+ -- Jeff Curless <jeff@thecurlesses.com>  Mon, 23 Nov 2026 14:00:00 -0500

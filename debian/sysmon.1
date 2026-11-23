@@ -1,0 +1,32 @@
+.TH SYSMON 1 "November 2026" "sysmon 1.0.0" "User Commands"
+.SH NAME
+sysmon \- graphical system monitor for Raspberry Pi
+.SH SYNOPSIS
+.B sysmon
+.SH DESCRIPTION
+.B sysmon
+shows live rolling charts of CPU utilization, disk I/O, network I/O,
+CPU and drive temperatures, and fan speed, updating every second with
+60 seconds of history. It requires a graphical desktop session.
+.PP
+Drive temperatures are read with
+.BR "sudo smartctl" ,
+so the user must be able to run
+.B smartctl
+through
+.B sudo
+without a password.
+.SH FILES
+.TP
+.I /etc/sysmon.ini
+Optional configuration file for hiding drives and network interfaces,
+setting a case fan tachometer GPIO pin, and passing extra
+.B smartctl
+options. An annotated example is installed at
+.IR /usr/share/doc/sysmon/examples/sysmon.ini .
+.TP
+.I /usr/lib/sysmon/venv
+Python virtual environment the application runs in, created when the
+package is configured.
+.SH SEE ALSO
+.BR smartctl (8)

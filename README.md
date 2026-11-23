@@ -44,6 +44,29 @@ sysmon is a desktop (GUI) application, so it needs Raspberry Pi OS with desktop 
 
 ## Installation
 
+### As a Debian package (recommended)
+
+Build the `.deb` from the repository, then install it with `apt`, which pulls in all the dependencies:
+
+```bash
+sudo apt install debhelper              # one-time build tool
+dpkg-buildpackage -us -uc -b            # writes ../sysmon_<version>_all.deb
+sudo apt install ../sysmon_*_all.deb
+```
+
+The package installs:
+
+- the application in `/usr/lib/sysmon/app`, run from its own Python virtual environment in `/usr/lib/sysmon/venv` (created at install time on top of the Debian-packaged PyQt6 and GPIO libraries, so nothing is downloaded with pip)
+- a `sysmon` command in `/usr/bin`
+- a **System Tools** menu entry with the sysmon icon
+- an example configuration in `/usr/share/doc/sysmon/examples/sysmon.ini`
+
+Remove it with `sudo apt remove sysmon`. The package doesn't create `/etc/sysmon.ini`; copy the example there if you want one (step 3 below). The `sudo smartctl` note in step 4 still applies.
+
+To release a new version, add an entry to `debian/changelog` (`dch -i` from the `devscripts` package does this) before building.
+
+### Manually
+
 1. Install the dependencies. On Raspberry Pi OS (Bookworm or later):
 
    ```bash

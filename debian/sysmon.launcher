@@ -1,0 +1,9 @@
+#!/bin/sh
+# Launch sysmon from its private virtual environment.
+VENV=/usr/lib/sysmon/venv
+if [ ! -x "$VENV/bin/python3" ]; then
+    echo "sysmon: virtual environment $VENV is missing; reinstall with:" >&2
+    echo "    sudo dpkg-reconfigure sysmon" >&2
+    exit 1
+fi
+exec "$VENV/bin/python3" /usr/lib/sysmon/app/sysmon.py "$@"

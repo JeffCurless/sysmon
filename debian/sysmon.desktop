@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=sysmon
+GenericName=System Monitor
+Comment=Live charts of CPU, temperature, fan, disk and network activity
+Exec=sysmon
+Icon=sysmon
+Terminal=false
+Categories=System;Monitor;
+Keywords=cpu;temperature;fan;disk;network;monitor;

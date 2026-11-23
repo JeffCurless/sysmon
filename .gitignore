@@ -9,3 +9,11 @@ __pycache__/
 
 # Named pipe created by a local tool
 .lgd-nfy0
+
+# Debian package build output
+debian/sysmon/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/*.debhelper.log

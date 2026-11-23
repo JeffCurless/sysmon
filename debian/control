@@ -1,0 +1,28 @@
+Source: sysmon
+Section: utils
+Priority: optional
+Maintainer: Jeff Curless <jeff@thecurlesses.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.2
+Homepage: https://github.com/JeffCurless/sysmon
+Rules-Requires-Root: no
+
+Package: sysmon
+Architecture: all
+Depends: ${misc:Depends},
+         python3 (>= 3.10),
+         python3-venv,
+         python3-pyqt6,
+         python3-pyqt6.qtcharts,
+         python3-gpiozero,
+         python3-rpi-lgpio | python3-rpi.gpio,
+         smartmontools,
+         sudo
+Description: graphical system monitor for Raspberry Pi
+ sysmon is a PyQt6 desktop application that shows live rolling charts of
+ CPU utilization, disk I/O, network I/O, CPU and drive temperatures, and
+ fan speed, updating every second with 60 seconds of history.
+ .
+ The application runs from its own Python virtual environment in
+ /usr/lib/sysmon/venv, which is created when the package is installed and
+ uses the Debian-packaged PyQt6 and GPIO libraries.
