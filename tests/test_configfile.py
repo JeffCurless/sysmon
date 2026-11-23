@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """Tests for configfile.ConfigClass: it must never raise, and must fall back to defaults."""
 # pylint: disable=redefined-outer-name,missing-function-docstring,unused-argument,protected-access
 # (pytest fixtures are injected as same-named arguments; test names are their docs)
@@ -89,3 +93,24 @@ def test_duplicate_key_in_test_ini(capsys):
     assert cfg.getValue("smartctl", "sda") == "foobar"
     # ... and parsing stops there, so later keys fall back to the default.
     assert cfg.getValue("smartctl", "sdb", "missing") == "missing"
+
+
+def test_defaults_are_overridden_key_by_key(tmp_path):
+    path = tmp_path / "sysmon.ini"
+    path.write_text("[network]\ndevice_ignore = wg0\n", encoding="utf-8")
+    cfg = ConfigClass(str(path), defaults="[network]\ndevice_ignore = lo\n[drive]\ntemp_ignore = mmcblk0\n")
+    assert cfg.loaded
+    assert cfg.getValueAsList("network", "device_ignore") == ["wg0"]      # file wins
+    assert cfg.getValueAsList("drive", "temp_ignore") == ["mmcblk0"]      # default fills the gap
+
+
+def test_defaults_used_when_file_missing(tmp_path):
+    cfg = ConfigClass(str(tmp_path / "missing.ini"), defaults="[network]\ndevice_ignore = lo\n")
+    assert not cfg.loaded
+    assert cfg.getValueAsList("network", "device_ignore") == ["lo"]
+
+
+def test_empty_value_is_an_empty_list(tmp_path):
+    path = tmp_path / "sysmon.ini"
+    path.write_text("[network]\ndevice_ignore =\n", encoding="utf-8")
+    assert ConfigClass(str(path)).getValueAsList("network", "device_ignore") == []

@@ -1,13 +1,19 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """
-Hardware data collection for sysmon: CPU load and temperature, CPU fan
+Hardware data collection for sysmon: CPU load, model, temperature and fan
 speed, per-drive I/O and temperature, and per-interface network throughput.
 
-CPU temperature comes from gpiozero, which supports the Raspberry Pi 5 (and,
-presumably, will be the direction for all prior Pi versions).
+Kernel files are read through ``PROC_ROOT`` and ``SYS_ROOT`` so the tests can
+point them at a fake /proc and /sys.  CPU temperature comes from gpiozero;
+drive temperatures from ``sudo smartctl``.
 """
 import glob
 import os
+import re
 import shlex
 import subprocess
 import time
@@ -18,6 +24,38 @@ from gpiozero import CPUTemperature
 # call time, so tests can point them at a directory of recorded fixture files.
 PROC_ROOT = "/proc"
 SYS_ROOT  = "/sys"
+
+# smartctl device types, e.g. sat, sat,12, nvme, usbjmicron,0, megaraid,3, areca,1/2
+_SMARTCTL_TYPE = re.compile(r"[A-Za-z0-9_+,/-]{1,32}")
+
+
+def smartctl_device_args( value: str | None ) -> list[str] | None:
+    '''
+    Validate a ``[smartctl]`` setting.  smartctl runs as root (through sudo),
+    so the only option accepted is the device type: ``-d TYPE``, ``-dTYPE`` or
+    ``--device=TYPE``.  Anything else (drive-changing options such as ``-s``,
+    ``--set`` or ``-t``, extra arguments, or odd characters) is rejected.
+
+    Returns:
+        ``["-d", TYPE]`` for a valid setting, otherwise None.
+    '''
+    if not value:
+        return None
+    try:
+        words = shlex.split( value )
+    except ValueError:
+        return None
+    if len(words) == 2 and words[0] == "-d":
+        dev_type = words[1]
+    elif len(words) == 1 and words[0].startswith("--device="):
+        dev_type = words[0][len("--device="):]
+    elif len(words) == 1 and words[0].startswith("-d") and len(words[0]) > 2:
+        dev_type = words[0][2:]
+    else:
+        return None
+    if not _SMARTCTL_TYPE.fullmatch( dev_type ) or dev_type.startswith("-"):
+        return None
+    return ["-d", dev_type]
 
 
 def counter_delta( current: int, previous: int ) -> int:
@@ -31,17 +69,18 @@ def counter_delta( current: int, previous: int ) -> int:
 
 class DriveStats:
     '''
-    DriveStat class -
+    Per-interval I/O statistics for one block device, from
+    ``/sys/block/<device>/stat``.
 
-    This class gets the drive statistics from sysfs for the device passed
-    in.  There are several statistics can can be obtained.  Note that since
-    all of the data is pulled at the same time, it is upto the caller to
-    make sure all the stats needed are obtained at the same time.
+    Each read returns how much every counter advanced since the previous read
+    (see ``_getStats``).  The file is read once per call, so all the counters in
+    one result describe the same interval; read everything you need from one
+    ``readAllStats`` call rather than calling several properties in a row.
 
     See: https://www.kernel.org/doc/html/latest/block/stat.html
 
     Parameters:
-        device - the name of the device to track
+        device - Device name as listed in /sys/block, e.g. ``nvme0n1``.
     '''
 
     READ_IOS        = 0
@@ -118,10 +157,11 @@ class DriveStats:
     @property
     def readAllStats( self ) -> list[int]:
         '''
-        read all of the drive statisics from sysfs for the device.
+        Advance one interval and return every counter's change since the
+        previous read.
 
-        Returns
-            A list of all of the device stats
+        Returns:
+            ``NUM_FIELDS`` integers, in the kernel's field order.
         '''
         return self._getStats()
 
@@ -154,17 +194,14 @@ class DriveStats:
 
 class multiDriveStat():
     '''
-    This class allow for monitoring multiple drives at the same time. There are
-    two mechanisms used to create this class.  The first is with no parameters,
-    in this case, the system will automatically grab all of the drives and setup
-    to monitor them.
+    I/O statistics and temperatures for every drive at once.
 
-    The second method is to provide this class with a list of drives to monitor.
-    In this cased all of the drives that are NOT on that list are filtered out and
-    only the drives left will be processed.
+    Drives are discovered from /sys/block.  Loop and RAM devices (anything
+    whose name contains ``loop`` or ``ram``, including zram) are always left
+    out, as is every drive named in *driveIgnoreList*.
 
-    If there is a missing drive from the filter, that drive is eliminated.
-
+    Parameters:
+        driveIgnoreList - Drive names to leave out, e.g. ``['mmcblk0']``.
     '''
     def __init__(self, driveIgnoreList : list[str]|None=None):
         #
@@ -178,26 +215,23 @@ class multiDriveStat():
                          if 'loop' not in d and 'ram' not in d
                          and d not in driveIgnoreList ]
         self._stats = [ DriveStats(_) for _ in self._drives ]
+        # Drives whose rejected [smartctl] setting has already been reported.
+        self._badSmartctl: set[str] = set()
 
     @property
     def drives(self) -> list[str]:
-        '''
-        This attribute is used to list all of the drives that are being monitored
-
-        Returns:
-            A list of drives
-        '''
+        '''Names of the drives being monitored, sorted.'''
         return self._drives
 
     def driveSize( self, _drive: str ) -> int:
         '''
-        This function is called to obtain the size of the drive requested.
+        Size of *_drive* in bytes.
 
         Parameters:
-            _drive - the drive to lookup
+            _drive - Drive name, e.g. ``nvme0n1``.
 
         Returns:
-            The size in bytes, or 0 if the drive does not exist
+            The size in bytes, or 0 if it can't be read.
         '''
         try:
             with open(f'{SYS_ROOT}/block/{_drive}/size', encoding='utf-8') as f:
@@ -207,22 +241,29 @@ class multiDriveStat():
 
     def driveTemp(self,_drive:str, extracmd = None) -> float:
         '''
-        Get the drive temperature using smart data.  There are three basic temperature
-        settings we can read, smart ID 194, 190 and the Temperature: value.  These are
-        depenent on the drive, so look for all of them, and depending on the result, we
-        get the value.
+        Read a drive's temperature from ``sudo smartctl -A /dev/<drive>``.
+
+        The NVMe ``Temperature:`` line is used if present, then SMART attribute
+        194, then 190; drives differ in which they report.
 
         Parameters:
-            _drive   : The device we wish to scan
-            extraCmd : An optional additional command to send to the device.
+            _drive   - Drive name, e.g. ``sda``.
+            extracmd - The drive's ``[smartctl]`` setting.  Only ``-d TYPE`` is
+                       accepted (see ``smartctl_device_args``); anything else is
+                       reported once and ignored.
 
         Returns:
-            The temperature as a float, or zero if there is an error.
+            The temperature in degrees C, or 0.0 if it can't be read.
         '''
         cmd = ['sudo', 'smartctl']
         try:
             if extracmd:
-                cmd += shlex.split(extracmd)
+                device_args = smartctl_device_args( extracmd )
+                if device_args is not None:
+                    cmd += device_args
+                elif _drive not in self._badSmartctl:
+                    self._badSmartctl.add( _drive )
+                    print( f"Ignoring [smartctl] {_drive} = {extracmd!r}: only '-d TYPE' is allowed" )
             cmd += ['-A', f'/dev/{_drive}']
 
             # smartctl's exit status is a bitmask that is often non-zero even
@@ -248,12 +289,10 @@ class multiDriveStat():
 
     def readWriteSectors( self )-> dict[str,tuple[int,int]]:
         '''
-        Obtain the number of sectors read and written since the last
-        time this function as called.
+        Sectors read and written by each drive since the previous call.
 
         Returns:
-             A dictionary of the data, they key is the drive name, the value is the
-             read/write tuple.
+            A dict mapping drive name to a ``(read, written)`` tuple.
         '''
         curData = {}
         for _ in self._stats:
@@ -262,8 +301,11 @@ class multiDriveStat():
 
     def readWriteBytes( self ) -> dict[str,tuple[int,int]]:
         '''
-        Just like the readWriteSectors function but returns the data in Bytes
+        Bytes read and written by each drive since the previous call
+        (sectors x 512).
 
+        Returns:
+            A dict mapping drive name to a ``(read, written)`` tuple.
         '''
         curData = {}
         for _ in self._stats:
@@ -271,10 +313,7 @@ class multiDriveStat():
         return curData
 
 class CPUInfo:
-    '''
-    This class deals with getting data about a Raspberry PI 5 CPU fan.
-
-    '''
+    '''The CPU's board model, temperature, and (on a Pi 5 / CM5) fan speed.'''
     def __init__( self ) -> None:
         # gpiozero's CPUTemperature reads the sensor as soon as it is created,
         # so it is opened lazily: a machine without the sensor (or a sensor
@@ -285,12 +324,11 @@ class CPUInfo:
 
     def _cpuModel( self ) -> int:
         '''
-        Check for the cpu model.  Scan cpuinfo to see if we can locate a string that
-        matches something we are looking for.
+        Work out the Raspberry Pi model from the ``Model`` line of /proc/cpuinfo.
+        Compute Modules count as their board equivalent (CM5 is 5, CM4 is 4).
 
-        Return:
-            Model of the Raspberry PI.  This treats the Comput Modules the same as
-            standard model B's
+        Returns:
+            5, 4 or 3, or 0 if the model is unknown or cpuinfo can't be read.
         '''
         try:
             with open( f"{PROC_ROOT}/cpuinfo", encoding="utf-8" ) as f:
@@ -317,14 +355,13 @@ class CPUInfo:
     @property
     def temperature( self ) -> float:
         '''
-        Obtain the temperature of the CPU.  This utilizes a GPIO call to obtain
-        the CPU temp, via the CPUTemperature object from gpiozero
+        CPU temperature in degrees C, read through gpiozero's CPUTemperature.
 
-        The sensor is opened on first use, and opening is retried on each
-        call until it succeeds.
+        The sensor is opened on first use, and opening is retried on each call
+        until it succeeds.
 
         Returns:
-            A floating point number representing the temperature in degrees C
+            The temperature as a float.
 
         Raises:
             OSError or ValueError if the sensor is missing or unreadable
@@ -338,11 +375,10 @@ class CPUInfo:
     @property
     def CPUFanSpeed( self ) -> float:
         '''
-        Obtain the speed of the CPU fan.  This is based on monitoring the hardware
-        monitor, assuming that fan1_input is the fan connected to the CPU.
+        CPU fan speed in RPM, from the Pi 5 cooling fan's hwmon ``fan1_input``.
 
-        Return:
-            The fanspeed as a floating point number
+        Returns:
+            The speed as a float; 0.0 on other models, or if it can't be read.
         '''
         speed = 0
         if self._model == 5:
@@ -357,20 +393,11 @@ class CPUInfo:
 
 class CPULoad:
     '''
-    A class to help with obtaining the CPU load of the system. If there is more information
-    needed, we can add to this.
+    Per-core CPU utilization, from /proc/stat.
 
-    Note:
-       This code automatically attempts to load the data from the system to initialize the
-       object with names, and an initial set of data.
-
-       This may result in th first actual call return some not very consistent values, for
-       the time period being observed, but that difference is minimal.  In otherwords if we
-       the period of time being measured is 1 second, and it's been a minute since this class
-       was initialized, the first period reported will be CPU load over the minute, not 1 second,
-       and the second period reported will be for a second...
-
-       This is usually not an issue.
+    The first reading is taken when the object is created, so the first call
+    to ``getPercentages`` covers the time since then, however long that was;
+    later calls each cover the time since the previous call.
     '''
     def __init__( self ) -> None:
         #
@@ -389,13 +416,11 @@ class CPULoad:
 
     def _getRawData( self ) -> dict[str,tuple[int,int]]:
         '''
-        Obtain the raw CPU data from the system (located in /prop/stat), and
-        return just the cpu0 -> cpux values.  No assumption is made on the number of
-        cpus.
+        Read the per-core counters (``cpu0``, ``cpu1``, ...) from /proc/stat;
+        the all-CPU ``cpu`` line is skipped.  Any number of cores is supported.
 
         Returns:
-            A dictionary is returned, the format is name = (total, idle).  The total
-            time and idle time are use to determine the percent utilization of the system.
+            A dict mapping core name to ``(total, idle)`` jiffies since boot.
         '''
         result = {}
         with open(f"{PROC_ROOT}/stat", "r",encoding="utf8") as f:
@@ -414,20 +439,15 @@ class CPULoad:
 
     def getPercentages( self ) -> dict[str,float]:
         '''
-        Obtain the percent CPU utilization of the system for a period of time.
+        Utilization of each core since the previous call, as a percentage:
 
-        This routine gets the current raw data from the system, and then performs
-        a delta from the prior time this function was called.  This data is then run
-        through the following equation:
+            utilization = (total - idle) / total * 100
 
-             utilization = ((total - idle)/total) * 100
-
-        If the snapshots are taken at relativy consistent intervals, the CPU
-        utilization in percent, is reasonably lose to the actual percentage.
+        where *total* and *idle* are how much those counters advanced.  Called at
+        regular intervals, this gives each interval's utilization.
 
         Returns:
-            A dictionary consisting of the name of the CPU, and a floating point
-            number representing the current utilization of that CPU.
+            A dict mapping core name to its utilization (0-100) as a float.
         '''
         results = {}
         current = self._getRawData()
@@ -441,21 +461,11 @@ class CPULoad:
 
     @property
     def cpuNames( self ) -> list[str]:
-        '''
-        Get a list of CPU names from the system.
-
-        Returns:
-            a list of strings
-        '''
+        '''Core names, in /proc/stat order (e.g. ``['cpu0', 'cpu1']``).'''
         return self._names
 
     def __len__(self) -> int:
-        '''
-        handle getting the length (or count of CPU's).
-
-        Returns:
-            Number of CPU's
-        '''
+        '''Number of CPU cores.'''
         return len(self._previousData)
 
 class NetworkLoad:

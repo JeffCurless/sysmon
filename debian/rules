@@ -1,5 +1,9 @@
 #!/usr/bin/make -f
 
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 APPDIR   = debian/sysmon/usr/lib/sysmon/app
 ICONDIR  = debian/sysmon/usr/share/icons/hicolor
 # Must match the sysmon<N>x<N>.png files in icons/ (see icons/make_icons.py).
@@ -10,7 +14,11 @@ ICON_SIZES = 16 22 24 32 48 64 128 256
 
 override_dh_auto_install:
 	install -D -m 0755 -t $(APPDIR)/src src/sysmon.py src/systemsupport.py
-	install -D -m 0644 -t $(APPDIR)/src src/configfile.py src/fanspeed.py src/appicon.py src/charts.py src/autoconfig.py
+	install -D -m 0644 -t $(APPDIR)/src src/configfile.py src/fanspeed.py src/appicon.py src/charts.py src/autoconfig.py \
+		src/userconfig.py src/settingsdialog.py src/version.py
+	# The version shown in Help -> About comes from the changelog, like the package's.
+	dpkg-parsechangelog -S Version > $(APPDIR)/VERSION
+	chmod 0644 $(APPDIR)/VERSION
 	install -D -m 0644 -t $(APPDIR)/icons icons/sysmonicon.svg \
 		$(foreach n,$(ICON_SIZES),icons/sysmon$(n)x$(n).png)
 	install -D -m 0755 debian/sysmon.launcher debian/sysmon/usr/bin/sysmon

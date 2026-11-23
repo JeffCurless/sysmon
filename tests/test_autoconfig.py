@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """Tests for autoconfig.py, run against a fake /proc and /sys (see conftest)."""
 # pylint: disable=missing-function-docstring,redefined-outer-name,unused-argument
 import os
@@ -158,11 +162,29 @@ def test_render_round_trips_through_configclass(oneup, tmp_path):
     assert cfg.getValue("cooling", "casefan", None) is None
 
 
-def test_render_comments_out_empty_lists(fake_root, tmp_path):
+def test_render_writes_empty_lists_explicitly(fake_root, tmp_path):
+    '''An empty list must be written as "key =" so it overrides a non-empty default.'''
+    text = autoconfig.render(autoconfig.Settings())
+    assert "    device_ignore = \n" in text
+    cfg = ConfigClass(str(tmp_path / "missing.ini"), defaults="[network]\ndevice_ignore = lo, eth0\n")
+    cfg.loadString(text)
+    assert cfg.getValueAsList("network", "device_ignore") == []
+
+
+def test_settings_round_trip_with_casefan_and_smartctl(tmp_path):
+    settings = autoconfig.Settings(temp_ignore=["mmcblk0"], perf_ignore=[], device_ignore=["lo", "wg0"],
+                                   casefan=18, smartctl={"sda": "sat", "sdb": "usbjmicron,0"})
     cfg = ConfigClass(str(tmp_path / "missing.ini"))
-    cfg.loadString(autoconfig.render(autoconfig.detect()))
-    assert cfg.getValueAsList("drive", "temp_ignore") == []
-    assert cfg.getValueAsList("network", "device_ignore") == ["lo"]
+    cfg.loadString(autoconfig.render(settings))
+    assert autoconfig.Settings.from_config(cfg) == settings
+
+
+def test_from_config_drops_invalid_values(tmp_path):
+    path = tmp_path / "sysmon.ini"
+    path.write_text("[cooling]\ncasefan = 99\n[smartctl]\nsda = -s off\nsdb = -d sat\n", encoding="utf-8")
+    settings = autoconfig.Settings.from_config(ConfigClass(str(path)))
+    assert settings.casefan is None
+    assert settings.smartctl == {"sdb": "sat"}
 
 
 def test_write_creates_file(oneup, tmp_path, capsys):

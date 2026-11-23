@@ -1,4 +1,9 @@
 #!/bin/sh
+
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 set -e
 
 VENV=/usr/lib/sysmon/venv
@@ -10,11 +15,6 @@ case "$1" in
         # Debian-packaged PyQt6, gpiozero and RPi.GPIO; nothing is downloaded.
         python3 -m venv --clear --system-site-packages --without-pip "$VENV"
         "$VENV/bin/python3" -m compileall -q /usr/lib/sysmon/app >/dev/null || true
-        # Generate /etc/sysmon.ini from the hardware, but only if there is
-        # none: an existing (possibly user-edited) file is never replaced.
-        if [ ! -e /etc/sysmon.ini ]; then
-            "$VENV/bin/python3" /usr/lib/sysmon/app/src/autoconfig.py --write /etc/sysmon.ini || true
-        fi
         ;;
 esac
 

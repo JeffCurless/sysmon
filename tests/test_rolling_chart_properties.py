@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """
 Property-based tests for RollingChartDynamic: hypothesis generates many random
 traffic sequences and checks rules that must hold after every sample.

@@ -1,3 +1,23 @@
+sysmon (1.0.1) unstable; urgency=medium
+
+  * Settings are now per user in ~/.config/sysmon/sysmon.ini and can be
+    edited with File -> Settings; changes apply immediately. An existing
+    /etc/sysmon.ini is copied to the per-user file once, and the package
+    no longer creates /etc/sysmon.ini.
+  * Built-in defaults are worked out from the hardware at every start:
+    lo is hidden, mmcblk0 is hidden when the root filesystem is on NVMe,
+    and eth0 is hidden on an Argon ONE UP.
+  * [smartctl] settings are limited to "-d TYPE", since smartctl runs as
+    root.
+  * Taller charts: titles are drawn inside the charts (click to collapse),
+    less padding, legends on the right with a shared width so the time
+    axes line up.
+  * Ship the application icon at 16-256 px as well as SVG.
+  * Help -> Repository now opens https://github.com/JeffCurless/sysmon;
+    removed Help -> Configuration Help.
+
+ -- Jeff Curless <jeff@thecurlesses.com>  Mon, 23 Nov 2026 15:33:38 -0500
+
 sysmon (1.0.0) unstable; urgency=medium
 
   * Initial Debian package.

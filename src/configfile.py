@@ -1,6 +1,11 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jeff Curless
+# See the LICENSE file in the project root for the full license text.
+
 """
-Read-only INI configuration reader for sysmon that never raises: missing
-files, sections, or keys return the caller-supplied default.
+INI settings reader for sysmon that never raises: missing files, sections or
+keys return the caller-supplied default.  Optional default text can be layered
+under the file, so the file only needs the keys it wants to change.
 """
 import configparser
 from typing import Any
@@ -8,12 +13,11 @@ from typing import Any
 
 class ConfigClass:
     '''
-    Handle a .INI style configuration file.  Every function is designed to not
-    crash, and always return a default of the items are not present.
-
-    Currently support read-only.
+    Read an INI-style settings file.  No method raises: anything missing or
+    unreadable falls back to the caller's default.  Read-only; saving is done by
+    ``userconfig.save``.
     '''
-    def __init__( self, filename: str ) -> None:
+    def __init__( self, filename: str, defaults: str | None = None ) -> None:
         '''
         Load the INI configuration file at *filename*.  If the file does not
         exist or cannot be parsed, the object is still created and all
@@ -22,20 +26,25 @@ class ConfigClass:
 
         Parameters:
             filename - Absolute or relative path to the ``.ini`` file.
+            defaults - Optional INI text read *before* the file: the file's
+                       keys override it key by key, and keys the file lacks
+                       fall back to it.
         '''
         self.filename = filename
         self.config   = configparser.ConfigParser()
         # True once the file has actually been read (False if it is missing).
         self.loaded   = False
+        if defaults is not None:
+            self.loadString( defaults )
         self._openConfig()
 
     def _openConfig(self) -> None:
         '''
-        Open,, and read in the configuation file.  If the file does not exist, keep
-        trying to reopen the file until the file does exist.  While this approach does
-        not always help, it does allow for an application polls the configuration file
-        occasionally.
+        Read the settings file, if it exists.
 
+        Sets ``loaded`` to True when the file was read.  A file that exists but
+        can't be parsed is reported, and still counts as loaded: whatever parsed
+        before the error is kept.  A missing file is not an error.
         '''
         try:
             self.loaded = bool(self.config.read( self.filename ))
@@ -61,16 +70,16 @@ class ConfigClass:
 
     def getValue( self, section : str, key : str, default="" ) -> str:
         '''
-        This routine obtains the value of the key within the specified section, if there
-        is such a item.
+        Return the value of *key* in *section*, with double quotes removed and
+        surrounding whitespace stripped.
 
-        Parameter:
-            section - Name of the section to look for
-            key     - Key of the value desired
-            default - Value to return if there is no key
+        Parameters:
+            section - Section name, e.g. ``cooling``.
+            key     - Key name, e.g. ``casefan``.
+            default - Returned if the section or key doesn't exist.
 
         Returns:
-            The value of the key from the section read.
+            The value as a string, or *default*.
         '''
         value = default
         try:
@@ -81,16 +90,19 @@ class ConfigClass:
 
     def getValueAsList( self, section : str, name : str, default : list[Any]|None = None) -> list[str]:
         '''
-        This routine looks for the key in the specified section and returns the data if
-        it exists, if not the default value is returned.
+        Return the value of *name* in *section* as a comma-separated list.
+
+        Double quotes and whitespace around items are removed, and empty items
+        are dropped, so ``key =`` is an empty list and ``"lo, eth0"`` is
+        ``['lo', 'eth0']``.
 
         Parameters:
-            section - Section to look for
-            key     - Key to return the value of
-            default - If they key or section does not exist, return this value
+            section - Section name, e.g. ``network``.
+            name    - Key name, e.g. ``device_ignore``.
+            default - Returned if the section or key doesn't exist; None means [].
 
         Returns:
-            a List of items
+            A list of strings, or *default*.
         '''
         if default is None:
             value = []
@@ -99,20 +111,9 @@ class ConfigClass:
 
         try:
             temp = self.config[section][name]
+            # An empty value ("key =") is an empty list, not [""].
             value = [ n.replace('"','').strip() for n in temp.split(",")]
+            value = [ n for n in value if n ]
         except (KeyError, configparser.Error):
             pass
         return value
-
-if __name__ == "__main__":
-    cfg = ConfigClass( "test.ini" )
-    print( f"Value = {cfg.getValue( 'temperature', 'ignore' )}" )
-    print( f"Value = {cfg.getValueAsList( 'temperature', 'ignore' )}" )
-    print( f"Value = {cfg.getValue( 'performance', 'ignore' )}" )
-    print( f"Value = {cfg.getValueAsList( 'performance', 'ignore' )}" )
-    print( f"Value = {cfg.getValueAsList( 'Fruit', 'thing', ['this'] )}" )
-
-    drive = cfg.getValue( 'smartctl', 'sda' )
-    print( f"drive = {drive}" )
-
-    cfg = ConfigClass( "missingfile.ini" )
