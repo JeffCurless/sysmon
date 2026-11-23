@@ -5,7 +5,7 @@ case "$1" in
     remove|upgrade|deconfigure)
         # The venv and bytecode are created by postinst, not shipped in
         # the package, so dpkg won't remove them on its own.
-        rm -rf /usr/lib/sysmon/venv /usr/lib/sysmon/app/__pycache__
+        rm -rf /usr/lib/sysmon/venv /usr/lib/sysmon/app/src/__pycache__
         ;;
 esac
 

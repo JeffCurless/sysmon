@@ -6,4 +6,4 @@ if [ ! -x "$VENV/bin/python3" ]; then
     echo "    sudo dpkg-reconfigure sysmon" >&2
     exit 1
 fi
-exec "$VENV/bin/python3" /usr/lib/sysmon/app/sysmon.py "$@"
+exec "$VENV/bin/python3" /usr/lib/sysmon/app/src/sysmon.py "$@"

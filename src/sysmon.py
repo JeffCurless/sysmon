@@ -12,7 +12,7 @@ import sys
 from collections.abc import Callable
 
 from PyQt6.QtCore import Qt, QTimer, QUrl, QSettings
-from PyQt6.QtGui import QPalette, QColor, QPainter, QAction, QDesktopServices, QIcon, QMouseEvent
+from PyQt6.QtGui import QPalette, QColor, QPainter, QAction, QDesktopServices, QMouseEvent
 from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
                               QHBoxLayout, QLabel, QMainWindow, QMenu, QMenuBar, QMessageBox,
                               QSizePolicy, QSpacerItem, QTabWidget,
@@ -22,6 +22,7 @@ from PyQt6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
 from systemsupport import CPUInfo, CPULoad, multiDriveStat, NetworkLoad
 from configfile import ConfigClass
 from fanspeed import GetCaseFanSpeed
+from appicon import app_icon
 
 # --------------------------
 # Globals
@@ -520,7 +521,7 @@ class MonitorWindow(QMainWindow):
         self.multiDrive = multiDriveStat()
 
         self.setWindowTitle("System Monitor")
-        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), 'icon.svg')))
+        self.setWindowIcon(app_icon())
         self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
 
         central = QWidget(self)
@@ -985,7 +986,7 @@ def main():
     os.environ['QT_QPA_PLATFORMTHEME'] = 'fusion'
     app = QApplication(sys.argv)
     apply_dark_palette(app)
-    app.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), 'icon.svg')))
+    app.setWindowIcon(app_icon())
     w = MonitorWindow(refresh_ms=1000)
     w.show()
     sys.exit(app.exec())

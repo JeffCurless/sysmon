@@ -17,8 +17,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
-# Make the top-level modules (systemsupport, configfile, ...) importable.
-sys.path.insert(0, str(REPO_ROOT))
+SRC_DIR = REPO_ROOT / "src"
+
+# Make the application modules in src/ (systemsupport, configfile, ...) importable.
+sys.path.insert(0, str(SRC_DIR))
 
 # Qt must be headless; must be set before pytest-qt creates the QApplication.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

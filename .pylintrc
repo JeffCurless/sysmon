@@ -1,12 +1,12 @@
 # Pylint configuration for sysmon.
-# Run from the repo root:  pylint *.py
+# Run from the repo root:  pylint src/*.py tests/*.py icons/*.py
 
 [MAIN]
 # PyQt6 is a compiled extension; allow pylint to import it so it can see its
 # members (otherwise every Qt import is a false no-name-in-module).
 extension-pkg-allow-list=PyQt6
-# Let the tests import the top-level modules and conftest (run from the repo root).
-init-hook="import sys; sys.path[:0] = ['.', 'tests']"
+# Let the tests import the modules in src/ and conftest (run from the repo root).
+init-hook="import sys; sys.path[:0] = ['src', 'tests']"
 
 [MESSAGES CONTROL]
 disable=

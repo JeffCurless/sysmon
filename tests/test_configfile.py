@@ -3,7 +3,7 @@
 # (pytest fixtures are injected as same-named arguments; test names are their docs)
 import pytest
 
-from conftest import REPO_ROOT
+from conftest import FIXTURES
 
 from configfile import ConfigClass
 
@@ -81,7 +81,7 @@ def test_unparseable_file_returns_defaults(ini):
 
 def test_duplicate_key_in_test_ini(capsys):
     # test.ini deliberately defines [smartctl] sda twice to exercise this path.
-    cfg = ConfigClass(str(REPO_ROOT / "test.ini"))
+    cfg = ConfigClass(str(FIXTURES / "test.ini"))
     assert "already exists" in capsys.readouterr().out
     # Values before the duplicate are kept ...
     assert cfg.getValue("temperature", "ignore") == "mmcblk0"

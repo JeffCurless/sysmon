@@ -106,7 +106,7 @@ If a drive's temperature can't be read, its line on the Temperature chart shows 
 ## Running
 
 ```bash
-python3 sysmon.py        # or ./sysmon.py
+python3 src/sysmon.py    # or ./src/sysmon.py
 ```
 
 The application reads its configuration from `/etc/sysmon.ini` at startup (see [Configuration](#configuration)). Configuration changes take effect the next time sysmon starts.
@@ -183,12 +183,15 @@ The disk and network charts rescale automatically. When a new sample is more tha
 
 | File | Purpose |
 |------|---------|
-| `sysmon.py` | GUI application (the main program): chart classes, window layout, menus, 1-second timer loop, config loading |
-| `systemsupport.py` | Hardware data: CPU load, CPU model/temperature/fan, drive stats and temperatures, network stats |
-| `configfile.py` | INI file reader wrapping `configparser`; never raises, always returns the caller's default |
-| `fanspeed.py` | Optional GPIO tachometer reader for a case fan |
+| `src/sysmon.py` | GUI application (the main program): chart classes, window layout, menus, 1-second timer loop, config loading |
+| `src/systemsupport.py` | Hardware data: CPU load, CPU model/temperature/fan, drive stats and temperatures, network stats |
+| `src/configfile.py` | INI file reader wrapping `configparser`; never raises, always returns the caller's default |
+| `src/fanspeed.py` | Optional GPIO tachometer reader for a case fan |
+| `src/appicon.py` | Builds the window icon from `icons/` |
+| `icons/` | `sysmonicon.svg` (the master icon), `sysmon<N>x<N>.png` renders of it at 16–256 px, and `make_icons.py`, which regenerates the PNGs after the SVG changes |
 | `sysmon.ini` | Sample configuration file |
-| `tests/` | pytest suite (see [Testing](#testing)) |
+| `tests/` | pytest suite (see [Testing](#testing)); `tests/fixtures/` holds its data files |
+| `debian/` | Debian packaging (see [Installing](#installing)) |
 
 ### Data flow
 
@@ -312,17 +315,18 @@ The tests never touch real hardware. Kernel files come from a temporary fake `/p
 | File | Covers |
 |------|--------|
 | `test_systemsupport.py` | CPU %, drive and network discovery and deltas (including counter resets and failed reads), `smartctl` parsing for NVMe / SATA / USB-bridge / SD card, CPU model, temperature, and fan |
-| `test_configfile.py` | values, lists, defaults, unparseable files, and the deliberate duplicate key in `test.ini` |
+| `test_configfile.py` | values, lists, defaults, unparseable files, and the deliberate duplicate key in `tests/fixtures/test.ini` |
 | `test_fanspeed.py` | RPM calculation, bounce rejection, stopped-fan timeout, GPIO setup and release |
 | `test_scaling.py` | unit tiers and Y-axis sizing for the disk and network charts |
 | `test_monitor_window.py` | the main window: case fan setup (including bad pins), drive filters, collapsing charts, saved view settings and their migration from oneUpMon, and the Help → Repository link |
+| `test_icons.py` | every icon size exists at its stated size, and the window icon loads them |
 | `test_rolling_chart_properties.py` | [hypothesis](https://hypothesis.readthedocs.io/) property tests: random traffic must always display correctly and stay on-screen (skipped if hypothesis isn't installed) |
 
 Linting and type checking use the project's `.pylintrc` and `mypy.ini`; both currently report no issues:
 
 ```bash
-pylint *.py tests/*.py
-mypy *.py tests/*.py
+pylint src/*.py tests/*.py icons/*.py
+mypy src/*.py tests/*.py icons/*.py
 ```
 
 To run the tests, pylint, and mypy in one go (extra arguments are passed to pytest):

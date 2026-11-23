@@ -1,13 +1,19 @@
 #!/usr/bin/make -f
 
-APPDIR = debian/sysmon/usr/lib/sysmon/app
+APPDIR   = debian/sysmon/usr/lib/sysmon/app
+ICONDIR  = debian/sysmon/usr/share/icons/hicolor
+# Must match the sysmon<N>x<N>.png files in icons/ (see icons/make_icons.py).
+ICON_SIZES = 16 22 24 32 48 64 128 256
 
 %:
 	dh $@
 
 override_dh_auto_install:
-	install -D -m 0755 -t $(APPDIR) sysmon.py systemsupport.py
-	install -D -m 0644 -t $(APPDIR) configfile.py fanspeed.py icon.svg
+	install -D -m 0755 -t $(APPDIR)/src src/sysmon.py src/systemsupport.py
+	install -D -m 0644 -t $(APPDIR)/src src/configfile.py src/fanspeed.py src/appicon.py
+	install -D -m 0644 -t $(APPDIR)/icons icons/sysmonicon.svg \
+		$(foreach n,$(ICON_SIZES),icons/sysmon$(n)x$(n).png)
 	install -D -m 0755 debian/sysmon.launcher debian/sysmon/usr/bin/sysmon
 	install -D -m 0644 debian/sysmon.desktop debian/sysmon/usr/share/applications/sysmon.desktop
-	install -D -m 0644 icon.svg debian/sysmon/usr/share/icons/hicolor/scalable/apps/sysmon.svg
+	install -D -m 0644 icons/sysmonicon.svg $(ICONDIR)/scalable/apps/sysmon.svg
+	$(foreach n,$(ICON_SIZES),install -D -m 0644 icons/sysmon$(n)x$(n).png $(ICONDIR)/$(n)x$(n)/apps/sysmon.png;)

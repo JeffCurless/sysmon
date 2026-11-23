@@ -41,14 +41,14 @@ else
 fi
 
 if command -v pylint >/dev/null; then
-    run pylint pylint ./*.py tests/*.py
+    run pylint pylint src/*.py tests/*.py icons/*.py
 else
     printf '\n==== pylint ====\npylint is not installed\n'
     failed+=(pylint)
 fi
 
 if command -v mypy >/dev/null; then
-    run mypy mypy ./*.py tests/*.py
+    run mypy mypy src/*.py tests/*.py icons/*.py
 else
     printf '\n==== mypy ====\nmypy is not installed\n'
     failed+=(mypy)

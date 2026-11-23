@@ -11,6 +11,7 @@ fake `/proc` and `/sys` tree (see `conftest.py`), so no real hardware is read.
 | `smartctl/mmcblk0.txt` | **Recorded**: `sudo smartctl -A /dev/mmcblk0` (SD card, no SMART support) |
 | `smartctl/sata_194.txt` | **Hand-written** in smartctl's ATA format: attributes 190 and 194 both present |
 | `smartctl/usb_bridge_190.txt` | **Hand-written** in smartctl's ATA format: only attribute 190 present |
+| `test.ini` | **Hand-written** config for `test_configfile.py`; its duplicate `[smartctl] sda` key is intentional |
 
 To add a real sample from another drive, save its output here, e.g.
 `sudo smartctl -d sat -A /dev/sda > smartctl/<name>.txt`, and add a case to
